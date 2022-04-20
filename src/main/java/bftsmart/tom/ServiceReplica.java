@@ -133,6 +133,7 @@ public class ServiceReplica {
     public ServiceReplica(int id, String configHome, Executable executor, Recoverable recoverer, RequestVerifier verifier, Replier replier, KeyLoader loader) {
         this.id = id;
         this.SVController = new ServerViewController(id, configHome, loader);
+        System.out.println("ServerViewController finished.");
         this.executor = executor;
         this.recoverer = recoverer;
         this.replier = (replier != null ? replier : new DefaultReplier());
