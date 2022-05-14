@@ -273,12 +273,13 @@ public class ServerViewController extends ViewController {
             //membro da view atual
             otherProcesses = new int[currentView.getProcesses().length - 1];
             int c = 0;
+            System.out.println("Here for.");
             for (int i = 0; i < currentView.getProcesses().length; i++) {
                 if (currentView.getProcesses()[i] != getStaticConf().getProcessId()) {
                     otherProcesses[c++] = currentView.getProcesses()[i];
                 }
             }
-
+            System.out.println("After loop.");
             this.quorumBFT = (int) Math.ceil((this.currentView.getN() + this.currentView.getF()) / 2);
             this.quorumCFT = (int) Math.ceil(this.currentView.getN() / 2);
         } else if (this.currentView != null && this.currentView.isMember(getStaticConf().getProcessId())) {

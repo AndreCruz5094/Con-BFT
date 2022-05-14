@@ -20,9 +20,16 @@
 		<nature>org.eclipse.jdt.core.javanature</nature>
 		<nature>org.eclipse.buildship.core.gradleprojectnature</nature>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>Java-SGX</name>
+			<type>2</type>
+			<location>/home/andrecruz/Tese/Java-SGX</location>
+		</link>
+	</linkedResources>
 	<filteredResources>
 		<filter>
-			<id>1650276853433</id>
+			<id>0</id>
 			<name></name>
 			<type>30</type>
 			<matcher>

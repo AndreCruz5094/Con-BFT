@@ -55,26 +55,28 @@ public final class CounterServer extends DefaultSingleRecoverable  {
 	private int iterations = 0;
 
 	public CounterServer(int id) {
-		SgxFunctions sgx = new SgxFunctions(20);
+		SgxFunctions sgx = new SgxFunctions(5);
 		//Create .pem File:
 		File pem = null;
 		try {
-			pem = createPem(20);
+			pem = createPem(5);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 
 		String enc_path = sgx.createSignedEnclave(System.getProperty("user.dir"), pem.getAbsolutePath(), 20);
 		System.out.println("Enclave Signed.");
-		sgx.jni_initialize_enclave(20, enc_path);
+//		sgx.jni_initialize_enclave(20, enc_path);
+		sgx.jni_initialize_enclave(5);
 		System.out.println("Enclave created.");
-		byte[] ec_params = sgx.jni_sgx_begin_ec_dh();
-		System.out.println(Arrays.toString(ec_params)); //Start my EC Curve.
-		byte[] sealed_key = sgx.jni_calculate_shared_dh(ec_params);
-		//System.out.println(Arrays.toString(sealed_key));
-		byte[] enc_whatever = sgx.jni_sgx_aes_dh_encrypt(sealed_key, "O Pardo eh fixe".getBytes(StandardCharsets.UTF_8));
-		//System.out.println(new String(enc_whatever,StandardCharsets.UTF_8));
-		System.out.println(new String(sgx.jni_sgx_aes_dh_decrypt(sealed_key, enc_whatever, -1),StandardCharsets.UTF_8));
+//		System.out.println("Enclave created.");
+//		byte[] ec_params = sgx.jni_sgx_begin_ec_dh();
+//		System.out.println(Arrays.toString(ec_params)); //Start my EC Curve.
+//		byte[] sealed_key = sgx.jni_calculate_shared_dh(ec_params);
+//		//System.out.println(Arrays.toString(sealed_key));
+//		byte[] enc_whatever = sgx.jni_sgx_aes_dh_encrypt(sealed_key, "Consegui iniciar o Enclave.".getBytes(StandardCharsets.UTF_8));
+//		//System.out.println(new String(enc_whatever,StandardCharsets.UTF_8));
+//		System.out.println(new String(sgx.jni_sgx_aes_dh_decrypt(sealed_key, enc_whatever, -1),StandardCharsets.UTF_8));
 		new ServiceReplica(id, this, this);
 	}
 

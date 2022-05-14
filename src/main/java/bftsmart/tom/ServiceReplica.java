@@ -138,6 +138,7 @@ public class ServiceReplica {
         this.recoverer = recoverer;
         this.replier = (replier != null ? replier : new DefaultReplier());
         this.verifier = verifier;
+        System.out.println("Before init.");
         this.init();
         this.recoverer.setReplicaContext(replicaCtx);
         this.replier.setReplicaContext(replicaCtx);
@@ -147,6 +148,7 @@ public class ServiceReplica {
     private void init() {
         try {
             cs = new ServerCommunicationSystem(this.SVController, this);
+            System.out.println("After server comm.");
         } catch (Exception ex) {
             logger.error("Failed to initialize replica-to-replica communication system", ex);
             throw new RuntimeException("Unable to build a communication system.");

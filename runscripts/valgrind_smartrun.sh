@@ -1,0 +1,1 @@
+valgrind --log-file="leaks.md" --leak-check=full java -Djava.security.properties="./config/java.security" -Djava.library.path="./lib/" -Dfile.encoding=UTF-8 -XX:ErrorFile="/home/andrecruz/Tese/Con-BFT/" -XX:+ShowCodeDetailsInExceptionMessages -Dlogback.configurationFile="./config/logback.xml" -cp "lib/*" $@ 

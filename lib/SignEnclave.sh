@@ -5,7 +5,7 @@ Signer="/opt/intel/sgxsdk/bin/x64/sgx_sign"
 xmlPath="Enclave/Enclave.config.xml"
 pemToDelete="$1/$6private.pem"
 #hexOutput="enclave$4_hash.hex"
-signedEnclave="enclave$6_signed.so"
+signedEnclave="$6enclave_signed.so"
 configPath="$1$xmlPath"
 
 

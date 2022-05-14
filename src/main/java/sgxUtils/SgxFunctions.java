@@ -111,7 +111,7 @@ public class SgxFunctions {
 	 * JNI call in order to initialize the Intel SGX Enclave. 
 	 * @return an Integer to indicate success, with anything below 0 indicating error.
 	 */
-	public native int jni_initialize_enclave(int enclaveId,String enclaveFilePath);
+	public native int jni_initialize_enclave(int enclaveId);
 
 
 	//Destroy the enclave.

@@ -137,6 +137,7 @@ distributions {
             }
             from 'runscripts/smartrun.sh'
             from 'runscripts/smartrun.cmd'
+            from 'runscripts/valgrind_smartrun.sh'
         }
     }
 }
