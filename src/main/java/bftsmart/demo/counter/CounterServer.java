@@ -64,7 +64,7 @@ public final class CounterServer extends DefaultSingleRecoverable  {
 			e.printStackTrace();
 		}
 
-		String enc_path = sgx.createSignedEnclave(System.getProperty("user.dir"), pem.getAbsolutePath(), 20);
+		sgx.createSignedEnclave(System.getProperty("user.dir"), pem.getAbsolutePath(), 5);
 		System.out.println("Enclave Signed.");
 //		sgx.jni_initialize_enclave(20, enc_path);
 		sgx.jni_initialize_enclave(5);

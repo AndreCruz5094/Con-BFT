@@ -54,58 +54,28 @@ public class SgxFunctions {
 	 * @param pemFilePath - File of the .pem file used to sign the enclave.
 	 * @param enclaveID - Global Id for the enclave.
 	 */
-	public String createSignedEnclave(String dir,String pemFilePath, int enclaveID) {
-
-		System.out.println(pemFilePath);
-		String fullPath = this.getClass().getResource("").getPath();
-		if(fullPath.contains("file:")) {
-			StringBuilder str = new StringBuilder(fullPath);
-			str.delete(0, 5);
-			fullPath = str.toString();
-		}
-			
-		System.out.println(fullPath);
-		String[] folders = fullPath.split("/");
-		String correctPath = "";
-		for(int i = 0; i < folders.length - 2; i++) {
-			correctPath += folders[i];
-			if(i != folders.length-2) {
-				correctPath += "/";
-			}
-		}
-
-		//Get the filename of the pemFile:
-		String[] aux = pemFilePath.split("/");
-		String pemFileName = aux[aux.length-1];
-
-		String bashPath = correctPath + "SignEnclave.sh";
-
-		try {
-			return executeShell(bashPath,correctPath,dir,pemFilePath,enclaveID,pemFileName);
-		} catch (IOException e) {
-			return null;
-		}
-	}
-
-	private String executeShell(String path,String shellDirectory,String toMove,String pemPath,int enclaveId, String pemFileName) throws IOException {
-		String finalLocation = toMove + "/" ;
-		String[] cmd = {"sh",path,shellDirectory,toMove,finalLocation,pemPath, pemFileName,Integer.toString(enclaveId)};
+	public void createSignedEnclave(String dir,String pemFilePath, int enclaveID) {
+		
+		String shPath = dir + "/lib/SignEnclaveAux.sh"; //Get the correct Script.
+		System.out.println(shPath);
+		String[] cmd = {"sh", shPath,Integer.toString(enclaveID)};
 		System.out.println(Arrays.toString(cmd));
-		Process p = Runtime.getRuntime().exec(cmd);
-		BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
-		String l = null;
-		while( (l = br.readLine()) != null )
-			System.out.println(l);
+		try {
+			Process p = Runtime.getRuntime().exec(cmd);
+			BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
+			String l = null;
+			while( (l = br.readLine()) != null )
+				System.out.println(l);
 
-		BufferedReader errBr = new BufferedReader(new InputStreamReader(p.getErrorStream()));
-		String err = null;
-		while( (err = errBr.readLine()) != null)
-			System.out.println(err);
-
-		finalLocation = finalLocation + "enclave" + enclaveId + "_signed.so";
-		System.out.println(finalLocation);
-		return finalLocation;
+			BufferedReader errBr = new BufferedReader(new InputStreamReader(p.getErrorStream()));
+			String err = null;
+			while( (err = errBr.readLine()) != null)
+				System.out.println(err);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 	}
+
 
 	/**
 	 * JNI call in order to initialize the Intel SGX Enclave. 

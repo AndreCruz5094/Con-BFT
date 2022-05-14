@@ -12,4 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-java -Djava.security.properties="./config/java.security" -Djava.library.path="./lib/" -Dfile.encoding=UTF-8 -XX:ErrorFile="/home/andrecruz/Tese/Con-BFT/" -XX:+ShowCodeDetailsInExceptionMessages -Dlogback.configurationFile="./config/logback.xml" -cp "lib/*" $@ 
+java -Djava.security.properties="./config/java.security" -Djava.library.path="./lib/" -Dfile.encoding=UTF-8 -XX:ErrorFile="/home/andre/Tese/Con-BFT/" -XX:+ShowCodeDetailsInExceptionMessages -Dlogback.configurationFile="./config/logback.xml" -cp "lib/*" $@ 
