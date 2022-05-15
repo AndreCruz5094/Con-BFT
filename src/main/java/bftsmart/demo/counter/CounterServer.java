@@ -59,7 +59,7 @@ public final class CounterServer extends DefaultSingleRecoverable  {
 		//Create .pem File:
 		File pem = null;
 		try {
-			pem = createPem(5);
+			pem = SgxFunctions.createPem(5);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -81,32 +81,7 @@ public final class CounterServer extends DefaultSingleRecoverable  {
 	}
 
 
-	private File createPem(int enclaveId) throws Exception{
-		String fileName = enclaveId + "private.pem";
-		File f = new File(fileName);
-		if(!f.exists()) {
-			createPrivateKey(f);
-		}
-		return f;
-	}
 
-	private void createPrivateKey(File f) throws Exception {
-		//First step, create a private RSA key.
-		KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
-		RSAKeyGenParameterSpec specs = new RSAKeyGenParameterSpec(3072,BigInteger.valueOf(3));
-		keyGen.initialize(specs);
-		KeyPair k = keyGen.generateKeyPair();
-		PrivateKey privKey = k.getPrivate();
-
-
-		String encodedString = "-----BEGIN PRIVATE KEY-----\n";
-		encodedString += Base64.getEncoder().encodeToString(privKey.getEncoded()) + "\n";
-		encodedString = encodedString+"-----END PRIVATE KEY-----\n";
-		f.createNewFile();
-		BufferedWriter b = new BufferedWriter(new PrintWriter(f));
-		b.write(encodedString);
-		b.close();
-	}
 
 
 @Override

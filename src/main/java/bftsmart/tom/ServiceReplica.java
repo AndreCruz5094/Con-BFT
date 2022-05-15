@@ -16,19 +16,24 @@
  */
 package bftsmart.tom;
 
+import java.io.File;
+import java.security.Provider;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import bftsmart.communication.ServerCommunicationSystem;
-import bftsmart.tom.core.ExecutionManager;
 import bftsmart.consensus.messages.MessageFactory;
 import bftsmart.consensus.roles.Acceptor;
 import bftsmart.consensus.roles.Proposer;
 import bftsmart.reconfiguration.ReconfigureReply;
 import bftsmart.reconfiguration.ServerViewController;
 import bftsmart.reconfiguration.VMMessage;
+import bftsmart.tom.core.ExecutionManager;
 import bftsmart.tom.core.ReplyManager;
 import bftsmart.tom.core.TOMLayer;
 import bftsmart.tom.core.messages.TOMMessage;
@@ -40,15 +45,11 @@ import bftsmart.tom.server.Recoverable;
 import bftsmart.tom.server.Replier;
 import bftsmart.tom.server.RequestVerifier;
 import bftsmart.tom.server.SingleExecutable;
-
 import bftsmart.tom.server.defaultservices.DefaultReplier;
 import bftsmart.tom.util.KeyLoader;
 import bftsmart.tom.util.ShutdownHookThread;
 import bftsmart.tom.util.TOMUtil;
-import java.security.Provider;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import sgxUtils.SgxFunctions;
 
 /**
  * This class receives messages from DeliveryThread and manages the execution
@@ -62,6 +63,13 @@ import org.slf4j.LoggerFactory;
 public class ServiceReplica {
     
     private Logger logger = LoggerFactory.getLogger(this.getClass());
+    
+    //Con-BFT usage:
+    private SgxFunctions enclave;
+    private int enclaveId;
+    private static final String HOME_DIR = System.getProperty("user.dir");
+    
+    
 
     // replica ID
     private int id;
@@ -96,10 +104,10 @@ public class ServiceReplica {
      * @param id Replica ID
      * @param executor Executor
      * @param recoverer Recoverer
-     * @param verifier Requests verifier
+     * @param enclaveId Requests verifier
      */
-    public ServiceReplica(int id, Executable executor, Recoverable recoverer, RequestVerifier verifier) {
-        this(id, "", executor, recoverer, verifier, new DefaultReplier(), null);
+    public ServiceReplica(int id, Executable executor, Recoverable recoverer, int enclaveId) {
+        this(id, "", executor, recoverer, null, new DefaultReplier(), null,enclaveId);
     }
     
     /**
@@ -143,6 +151,59 @@ public class ServiceReplica {
         this.recoverer.setReplicaContext(replicaCtx);
         this.replier.setReplicaContext(replicaCtx);
     }
+    
+    
+    
+    /**
+     * Constructor
+     *
+     * @param id Replica ID
+     * @param configHome Configuration directory for BFT-SMART
+     * @param executor The executor implementation
+     * @param recoverer The recoverer implementation
+     * @param verifier Requests Verifier
+     * @param replier Can be used to override the targets of the replies associated to each request.
+     * @param loader Used to load signature keys from disk
+     * @param enclaveId - id of the Enclave to be initiated.
+     */
+    public ServiceReplica(int id, String configHome, Executable executor, Recoverable recoverer, RequestVerifier verifier, Replier replier, KeyLoader loader, int enclaveId) {
+        this.id = id;
+        this.enclaveId = enclaveId;
+        this.SVController = new ServerViewController(id, configHome, loader);
+        System.out.println("ServerViewController finished.");
+        this.executor = executor;
+        this.recoverer = recoverer;
+        this.replier = (replier != null ? replier : new DefaultReplier());
+        this.verifier = verifier;
+        System.out.println("Before init.");
+        this.init();
+        this.initEnclave();
+        this.recoverer.setReplicaContext(replicaCtx);
+        this.replier.setReplicaContext(replicaCtx);
+    }
+    
+    
+    
+    /**
+     * Function created to initiate the Enclave:
+     */
+    private void initEnclave() {
+    	enclave = new SgxFunctions(this.enclaveId);
+    	try {
+			File pemFile = SgxFunctions.createPem(this.enclaveId);
+			enclave.createSignedEnclave(HOME_DIR, pemFile.getAbsolutePath(), enclaveId);
+			this.logger.info("Enclave signed");
+			int created = enclave.jni_initialize_enclave(enclaveId);
+			if(created == -1)
+				this.logger.error("Enclave Failed to create");
+			else
+				this.logger.info("Enclave created.");
+			
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+    }
+    
 
     // this method initializes the object
     private void init() {

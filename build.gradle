@@ -129,6 +129,7 @@ distributions {
                 from jar
                 from(configurations.runtimeClasspath)
                 from 'lib/SignEnclave.sh'
+                from 'lib/SignEnclaveAux.sh'
                 from 'lib/libSgx.so'
                 from 'lib/enclave.so'
             }

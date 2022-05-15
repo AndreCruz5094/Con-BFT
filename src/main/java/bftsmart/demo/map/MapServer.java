@@ -22,18 +22,18 @@ public class MapServer<K, V> extends DefaultSingleRecoverable {
 	private Map<K, V> replicaMap;
 	private Logger logger;
 
-	public MapServer(int id) {
+	public MapServer(int id, int enclaveId) {
 		replicaMap = new TreeMap<>();
 		logger = Logger.getLogger(MapServer.class.getName());
-		new ServiceReplica(id, this, this);
+		new ServiceReplica(id, this, this, enclaveId);
 	}
 
 	public static void main(String[] args) {
-		if (args.length < 1) {
-			System.out.println("Usage: demo.map.MapServer <server id>");
+		if (args.length < 2) {
+			System.out.println("Usage: demo.map.MapServer <server id> <enclaveId>");
 			System.exit(-1);
 		}
-		new MapServer<String, String>(Integer.parseInt(args[0]));
+		new MapServer<String, String>(Integer.parseInt(args[0]),Integer.parseInt(args[1]));
 	}
 
 	@SuppressWarnings("unchecked")

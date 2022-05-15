@@ -1,14 +1,22 @@
 package sgxUtils;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.math.BigInteger;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.spec.RSAKeyGenParameterSpec;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 
 public class SgxFunctions {
@@ -29,6 +37,33 @@ public class SgxFunctions {
 	private int enclaveId;
 	private String log_file_path;
 	private File log_file;
+	
+	public static File createPem(int enclaveId) throws Exception{
+		String fileName = enclaveId + "private.pem";
+		File f = new File(fileName);
+		if(!f.exists()) {
+			createPrivateKey(f);
+		}
+		return f;
+	}
+
+	private static void createPrivateKey(File f) throws Exception {
+		//First step, create a private RSA key.
+		KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+		RSAKeyGenParameterSpec specs = new RSAKeyGenParameterSpec(3072,BigInteger.valueOf(3));
+		keyGen.initialize(specs);
+		KeyPair k = keyGen.generateKeyPair();
+		PrivateKey privKey = k.getPrivate();
+
+
+		String encodedString = "-----BEGIN PRIVATE KEY-----\n";
+		encodedString += Base64.getEncoder().encodeToString(privKey.getEncoded()) + "\n";
+		encodedString = encodedString+"-----END PRIVATE KEY-----\n";
+		f.createNewFile();
+		BufferedWriter b = new BufferedWriter(new PrintWriter(f));
+		b.write(encodedString);
+		b.close();
+	}
 
 
 	/**
