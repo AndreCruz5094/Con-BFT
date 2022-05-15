@@ -129,9 +129,8 @@ distributions {
                 from jar
                 from(configurations.runtimeClasspath)
                 from 'lib/SignEnclave.sh'
-                from 'lib/SignEnclaveAux.sh'
                 from 'lib/libSgx.so'
-                from 'lib/enclave.so'
+                
             }
             into('lib/Enclave'){
                 from 'lib/Enclave.config.xml'
@@ -139,6 +138,8 @@ distributions {
             from 'runscripts/smartrun.sh'
             from 'runscripts/smartrun.cmd'
             from 'runscripts/valgrind_smartrun.sh'
+            from 'lib/SignEnclaveAux.sh'
+            from 'lib/enclave.so'
         }
     }
 }

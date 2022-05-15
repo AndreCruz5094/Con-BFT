@@ -91,7 +91,7 @@ public class SgxFunctions {
 	 */
 	public void createSignedEnclave(String dir,String pemFilePath, int enclaveID) {
 		
-		String shPath = dir + "/lib/SignEnclaveAux.sh"; //Get the correct Script.
+		String shPath = dir + "/SignEnclaveAux.sh"; //Get the correct Script.
 		System.out.println(shPath);
 		String[] cmd = {"sh", shPath,Integer.toString(enclaveID)};
 		System.out.println(Arrays.toString(cmd));
