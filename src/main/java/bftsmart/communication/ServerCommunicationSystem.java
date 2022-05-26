@@ -49,6 +49,9 @@ public class ServerCommunicationSystem extends Thread {
     private ServersCommunicationLayer serversConn;
     private CommunicationSystemServerSide clientsConn;
     private ServerViewController controller;
+    
+    //Con-BFT Adaptation:
+    private byte[] dh_parameters;
 
     /**
      * Creates a new instance of ServerCommunicationSystem
@@ -67,6 +70,19 @@ public class ServerCommunicationSystem extends Thread {
         //******* EDUARDO BEGIN **************//
             clientsConn = CommunicationSystemServerSideFactory.getCommunicationSystemServerSide(controller);
         //******* EDUARDO END **************//
+    }
+    
+    //SGX-enabled Communication System:
+    public ServerCommunicationSystem(ServerViewController controller, ServiceReplica replica, byte[] dhParameters) throws Exception {
+    	
+    	this.logger.info("Starting Communication System");
+    	this.controller = controller;
+    	this.messageHandler = new MessageHandler();
+    	this.inQueue = new LinkedBlockingQueue<SystemMessage>(controller.getStaticConf().getInQueueSize());
+    	this.dh_parameters = dhParameters;
+    	
+    	serversConn = new ServersCommunicationLayer(controller,inQueue,replica,dhParameters);
+    	
     }
 
     //******* EDUARDO BEGIN **************//
@@ -103,6 +119,7 @@ public class ServerCommunicationSystem extends Thread {
      */
     @Override
     public void run() {
+    	logger.info("SVC Thread started.");
         
         long count = 0;
         while (doWork) {

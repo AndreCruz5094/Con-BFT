@@ -67,6 +67,7 @@ public class ServiceReplica {
     //Con-BFT usage:
     private SgxFunctions enclave;
     private int enclaveId;
+    private byte[] dh_params;
     private static final String HOME_DIR = System.getProperty("user.dir");
     
     
@@ -170,14 +171,12 @@ public class ServiceReplica {
         this.id = id;
         this.enclaveId = enclaveId;
         this.SVController = new ServerViewController(id, configHome, loader);
-        System.out.println("ServerViewController finished.");
         this.executor = executor;
         this.recoverer = recoverer;
         this.replier = (replier != null ? replier : new DefaultReplier());
         this.verifier = verifier;
-        System.out.println("Before init.");
-        this.init();
         this.initEnclave();
+        this.initSGX();
         this.recoverer.setReplicaContext(replicaCtx);
         this.replier.setReplicaContext(replicaCtx);
     }
@@ -190,19 +189,62 @@ public class ServiceReplica {
     private void initEnclave() {
     	enclave = new SgxFunctions(this.enclaveId);
     	try {
-			File pemFile = SgxFunctions.createPem(this.enclaveId);
-			enclave.createSignedEnclave(HOME_DIR, pemFile.getAbsolutePath(), enclaveId);
-			this.logger.info("Enclave signed");
-			int created = enclave.jni_initialize_enclave(enclaveId);
+    		File pemFile = new File(HOME_DIR + "/" + this.enclaveId + ".pem");
+    		if(!pemFile.exists()) {
+    			pemFile = SgxFunctions.createPem(this.enclaveId);
+    		}
+    		File enclaveFile = new File(HOME_DIR + "/" + this.enclaveId + "enclave_signed.so");
+    		if(!enclaveFile.exists()) {
+    			enclave.createSignedEnclave(HOME_DIR, pemFile.getAbsolutePath(), enclaveId);
+    			this.logger.info("Enclave signed");
+    		}
+    		else
+    			this.logger.info("Enclave file exists. Starting enclave.");
+			
+			int created = enclave.jni_initialize_enclave(enclaveId,enclaveFile.getAbsolutePath());
 			if(created == -1)
 				this.logger.error("Enclave Failed to create");
 			else
 				this.logger.info("Enclave created.");
 			
+			//Create DH parameters:
+			this.dh_params = this.enclave.jni_sgx_begin_ec_dh(); //Begin the Enclave EC parameters for DH key exchange.
+			this.logger.info("EC-DH Parameters created for Key exchange.");
+			
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
     }
+    
+    
+    private void initSGX() {
+    	 try {
+             cs = new ServerCommunicationSystem(this.SVController, this,this.dh_params);
+             System.out.println("After server comm.");
+         } catch (Exception ex) {
+             logger.error("Failed to initialize replica-to-replica communication system", ex);
+             throw new RuntimeException("Unable to build a communication system.");
+         }
+
+         if (this.SVController.isInCurrentView()) {
+             logger.info("In current view: " + this.SVController.getCurrentView());
+             initTOMLayer(); // initiaze the TOM layer
+         } else {
+             logger.info("Not in current view: " + this.SVController.getCurrentView());
+             
+             //Not in the initial view, just waiting for the view where the join has been executed
+             logger.info("Waiting for the TTP: " + this.SVController.getCurrentView());
+             waitTTPJoinMsgLock.lock();
+             try {
+                 canProceed.awaitUninterruptibly();
+             } finally {
+                 waitTTPJoinMsgLock.unlock();
+             }
+             
+         }
+         initReplica();
+     }
+    
     
 
     // this method initializes the object
@@ -250,8 +292,10 @@ public class ServiceReplica {
     }
 
     private void initReplica() {
+    	this.logger.info("Replica Starting.");
         cs.start();
         repMan = new ReplyManager(SVController.getStaticConf().getNumRepliers(), cs);
+        this.logger.info("Reply Manager started");
     }
 
     public final void receiveReadonlyMessage(TOMMessage message, MessageContext msgCtx) {
@@ -542,7 +586,8 @@ public class ServiceReplica {
 
         tomLayer.start(); // start the layer execution
         tomStackCreated = true;
-
+        
+        this.logger.info("Started TOM Layer.");
     }
 
     /**
@@ -573,4 +618,12 @@ public class ServiceReplica {
     public int getId() {
         return id;
     }
+
+    /**
+     * returns SGXFunctions link in order to be able to call Enclave functions further on.
+     * @return
+     */
+	public SgxFunctions getEnclave() {
+		return this.enclave;		
+	}
 }

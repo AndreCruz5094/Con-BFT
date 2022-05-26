@@ -12,7 +12,7 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-*/
+ */
 package bftsmart.communication.server;
 
 import java.io.ByteArrayInputStream;
@@ -28,6 +28,11 @@ import java.security.KeyManagementException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.Security;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.CertificateException;
+import java.security.spec.InvalidKeySpecException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
@@ -44,19 +49,15 @@ import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import bftsmart.communication.SystemMessage;
 import bftsmart.reconfiguration.ServerViewController;
 import bftsmart.reconfiguration.VMMessage;
 import bftsmart.tom.ServiceReplica;
 import bftsmart.tom.util.TOMUtil;
-import java.security.SecureRandom;
-import java.security.Security;
-import java.security.UnrecoverableKeyException;
-import java.security.cert.CertificateException;
-import java.security.spec.InvalidKeySpecException;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import sgxUtils.SgxFunctions;
 
 /**
  * This class represents a connection with other server.
@@ -66,92 +67,132 @@ import org.slf4j.LoggerFactory;
  * @author alysson
  */
 public class ServerConnection {
-    
-    private Logger logger = LoggerFactory.getLogger(this.getClass());
+
+	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
 
-    private static final long POOL_TIME = 5000;
-    private ServerViewController controller;
-    private SSLSocket socket;
-    private DataOutputStream socketOutStream = null;
-    private DataInputStream socketInStream = null;
-    private int remoteId;
-    private boolean useSenderThread;
-    protected LinkedBlockingQueue<byte[]> outQueue;// = new LinkedBlockingQueue<byte[]>(SEND_QUEUE_SIZE);
-    private LinkedBlockingQueue<SystemMessage> inQueue;
-    
-    private Lock connectLock = new ReentrantLock();
-    /** Only used when there is no sender Thread */
-    private Lock sendLock;
-    private boolean doWork = true;
-    
-    private SecretKey secretKey = null;
+	private static final long POOL_TIME = 5000;
+	private ServerViewController controller;
+	private SSLSocket socket;
+	private DataOutputStream socketOutStream = null;
+	private DataInputStream socketInStream = null;
+	private int remoteId;
+	private boolean useSenderThread;
+	protected LinkedBlockingQueue<byte[]> outQueue;// = new LinkedBlockingQueue<byte[]>(SEND_QUEUE_SIZE);
+	private LinkedBlockingQueue<SystemMessage> inQueue;
 
-    /**
-     * Tulio A. Ribeiro
-     * TLS vars. 
-     */
-    private KeyManagerFactory kmf;
+	private Lock connectLock = new ReentrantLock();
+	/** Only used when there is no sender Thread */
+	private Lock sendLock;
+	private boolean doWork = true;
+
+	private SecretKey secretKey = null;
+
+	/**
+	 * Tulio A. Ribeiro
+	 * TLS vars. 
+	 */
+	private KeyManagerFactory kmf;
 	private KeyStore ks = null;
 	private FileInputStream fis = null;
 	private TrustManagerFactory trustMgrFactory;
 	private SSLContext context;
 	private SSLSocketFactory socketFactory;
 	private static final String SECRET = "MySeCreT_2hMOygBwY";
-    
-    public ServerConnection(ServerViewController controller, 
-    		SSLSocket socket, int remoteId,
-            LinkedBlockingQueue<SystemMessage> inQueue, 
-            ServiceReplica replica) {
 
-        this.controller = controller;
+	//Private sgx parameters:
+	private byte[] sharedDhKey;
+	private byte[] dhParameters;
+	private ServiceReplica serviceRep;
 
-        this.socket = socket;
 
-        this.remoteId = remoteId;
+	public ServerConnection(ServerViewController controller, 
+			SSLSocket socket, int remoteId,
+			LinkedBlockingQueue<SystemMessage> inQueue, 
+			ServiceReplica replica) {
 
-        this.inQueue = inQueue;
+		this.controller = controller;
 
-        this.outQueue = new LinkedBlockingQueue<byte[]>(this.controller.getStaticConf().getOutQueueSize());
+		this.socket = socket;
 
-        // Connect to the remote process or just wait for the connection?
-     		if (isToConnect()) {
-     			ssltlsCreateConnection();
-     		}
-     		
-     		if (this.socket != null) {
-    			try {
-    				socketOutStream = new DataOutputStream(this.socket.getOutputStream());
-    				socketInStream = new DataInputStream(this.socket.getInputStream());
-    			} catch (IOException ex) {
-    				logger.error("Error creating connection to " + remoteId, ex);
-    			}
-    		}
-               
-       //******* EDUARDO BEGIN **************//
-        this.useSenderThread = this.controller.getStaticConf().isUseSenderThread();
+		this.remoteId = remoteId;
 
-        if (useSenderThread && (this.controller.getStaticConf().getTTPId() != remoteId)) {
-            new SenderThread().start();
-        } else {
-            sendLock = new ReentrantLock();
-        }
-        
-        if (!this.controller.getStaticConf().isTheTTP()) {
-            if (this.controller.getStaticConf().getTTPId() == remoteId) {
-                //Uma thread "diferente" para as msgs recebidas da TTP
-                new TTPReceiverThread(replica).start();
-            } else {
-                new ReceiverThread().start();
-            }
-        }
-        //******* EDUARDO END **************//
-    }
-/**
- * Tulio A. Ribeiro.
- * @return SecretKey
- */
-    public SecretKey getSecretKey() {
+		this.inQueue = inQueue;
+
+		this.outQueue = new LinkedBlockingQueue<byte[]>(this.controller.getStaticConf().getOutQueueSize());
+
+		// Connect to the remote process or just wait for the connection?
+		if (isToConnect()) {
+			ssltlsCreateConnection();
+		}
+
+		if (this.socket != null) {
+			try {
+				socketOutStream = new DataOutputStream(this.socket.getOutputStream());
+				socketInStream = new DataInputStream(this.socket.getInputStream());
+			} catch (IOException ex) {
+				logger.error("Error creating connection to " + remoteId, ex);
+			}
+		}
+
+		//******* EDUARDO BEGIN **************//
+		this.useSenderThread = this.controller.getStaticConf().isUseSenderThread();
+
+		if (useSenderThread && (this.controller.getStaticConf().getTTPId() != remoteId)) {
+			new SenderThread().start();
+		} else {
+			sendLock = new ReentrantLock();
+		}
+
+		if (!this.controller.getStaticConf().isTheTTP()) {
+			if (this.controller.getStaticConf().getTTPId() == remoteId) {
+				//Uma thread "diferente" para as msgs recebidas da TTP
+				new TTPReceiverThread(replica).start();
+			} else {
+				new ReceiverThread().start();
+			}
+		}
+		//******* EDUARDO END **************//
+	}
+
+
+	public ServerConnection(ServerViewController controller, SSLSocket socket, int remoteId, LinkedBlockingQueue<SystemMessage> inQueue, 
+			ServiceReplica replica, byte[] dhParemeters) {
+
+		//Set private structure:
+		this.controller = controller;
+		this.socket = socket;
+		this.remoteId = remoteId;
+		this.inQueue = inQueue;
+		this.outQueue = new LinkedBlockingQueue<byte[]>(this.controller.getStaticConf().getOutQueueSize());
+		this.serviceRep = replica;
+		this.dhParameters = dhParemeters;
+
+		if (isToConnect()) {
+			ssltlsCreateConnection();
+		}
+
+		System.out.println("SOCKET: " + this.socket == null);
+
+		if (this.socket != null) {
+			System.out.println("Socket not Null..");
+			try {
+				socketOutStream = new DataOutputStream(this.socket.getOutputStream());
+				socketInStream = new DataInputStream(this.socket.getInputStream());
+			} catch (IOException ex) {
+				logger.error("Error creating connection to " + remoteId, ex);
+			}
+		}
+
+
+	} 
+
+
+	/**
+	 * Tulio A. Ribeiro.
+	 * @return SecretKey
+	 */
+	public SecretKey getSecretKey() {
 		if (secretKey != null)
 			return secretKey;
 		else {
@@ -167,22 +208,22 @@ public class ServerConnection {
 		}
 		return secretKey;
 	}
-    
-    /**
-     * Stop message sending and reception.
-     */
-    public void shutdown() {
-        logger.debug("SHUTDOWN for "+remoteId);
-        
-        doWork = false;
-        closeSocket();
-    }
 
-    /**
-     * Used to send packets to the remote server.
-     */
-    public final void send(byte[] data) throws InterruptedException {
-    	if (useSenderThread) {
+	/**
+	 * Stop message sending and reception.
+	 */
+	public void shutdown() {
+		logger.debug("SHUTDOWN for "+remoteId);
+
+		doWork = false;
+		closeSocket();
+	}
+
+	/**
+	 * Used to send packets to the remote server.
+	 */
+	public final void send(byte[] data) throws InterruptedException {
+		if (useSenderThread) {
 			// only enqueue messages if there queue is not full
 			if (!outQueue.offer(data)) {
 				logger.debug("Out queue for " + remoteId + " full (message discarded).");
@@ -192,9 +233,9 @@ public class ServerConnection {
 			sendBytes(data);
 			sendLock.unlock();
 		}
-    }
+	}
 
-    /**
+	/**
 	 * try to send a message through the socket if some problem is detected, a
 	 * reconnection is done
 	 */
@@ -229,31 +270,31 @@ public class ServerConnection {
 		} while (doWork);
 	}
 
-    //******* EDUARDO BEGIN **************//
-    //return true of a process shall connect to the remote process, false otherwise
-    private boolean isToConnect() {
-        if (this.controller.getStaticConf().getTTPId() == remoteId) {
-            //Need to wait for the connection request from the TTP, do not tray to connect to it
-            return false;
-        } else if (this.controller.getStaticConf().getTTPId() == this.controller.getStaticConf().getProcessId()) {
-            //If this is a TTP, one must connect to the remote process
-            return true;
-        }
-        boolean ret = false;
-        if (this.controller.isInCurrentView()) {
-            
-             //in this case, the node with higher ID starts the connection
-             if (this.controller.getStaticConf().getProcessId() > remoteId) {
-                 ret = true;
-             }
-                
-            /** JCS: I commented the code below to fix a bug, but I am not sure
+	//******* EDUARDO BEGIN **************//
+	//return true of a process shall connect to the remote process, false otherwise
+	private boolean isToConnect() {
+		if (this.controller.getStaticConf().getTTPId() == remoteId) {
+			//Need to wait for the connection request from the TTP, do not tray to connect to it
+			return false;
+		} else if (this.controller.getStaticConf().getTTPId() == this.controller.getStaticConf().getProcessId()) {
+			//If this is a TTP, one must connect to the remote process
+			return true;
+		}
+		boolean ret = false;
+		if (this.controller.isInCurrentView()) {
+
+			//in this case, the node with higher ID starts the connection
+			if (this.controller.getStaticConf().getProcessId() > remoteId) {
+				ret = true;
+			}
+
+			/** JCS: I commented the code below to fix a bug, but I am not sure
              whether its completely useless or not. The 'if' above was taken
              from that same code (its the only part I understand why is necessary)
              I keep the code commented just to be on the safe side*/
-            
-            /**
-            
+
+			/**
+
             boolean me = this.controller.isInLastJoinSet(this.controller.getStaticConf().getProcessId());
             boolean remote = this.controller.isInLastJoinSet(remoteId);
 
@@ -271,21 +312,21 @@ public class ServerConnection {
             } //else if (me && !remote) { //this process entered in the last reconfig and the other one is old
                 //ret=false; //not necessary, as ret already is false
             //}
-              
-            */
-        }
-        return ret;
-    }
-    //******* EDUARDO END **************//
+
+			 */
+		}
+		return ret;
+	}
+	//******* EDUARDO END **************//
 
 
-    /**
-     * (Re-)establish connection between peers.
-     *
-     * @param newSocket socket created when this server accepted the connection
-     * (only used if processId is less than remoteId)
-     */
-    protected void reconnect(SSLSocket newSocket) {
+	/**
+	 * (Re-)establish connection between peers.
+	 *
+	 * @param newSocket socket created when this server accepted the connection
+	 * (only used if processId is less than remoteId)
+	 */
+	protected void reconnect(SSLSocket newSocket) {
 
 		connectLock.lock();
 
@@ -313,84 +354,84 @@ public class ServerConnection {
 		connectLock.unlock();
 	}
 
-  
-    private void closeSocket() {
-        
-        connectLock.lock();
-        
-        if (socket != null) {
-            try {
-                socketOutStream.flush();
-                socket.close();
-            } catch (IOException ex) {
-                logger.debug("Error closing socket to "+remoteId);
-            } catch (NullPointerException npe) {
-            	logger.debug("Socket already closed");
-            }
 
-            socket = null;
-            socketOutStream = null;
-            socketInStream = null;
-        }
-        
-        connectLock.unlock();
-    }
+	private void closeSocket() {
 
-    private void waitAndConnect() {
-        if (doWork) {
-            try {
-                Thread.sleep(POOL_TIME);
-            } catch (InterruptedException ie) {
-            }
+		connectLock.lock();
 
-            outQueue.clear();
-            reconnect(null);
-        }
-    }
+		if (socket != null) {
+			try {
+				socketOutStream.flush();
+				socket.close();
+			} catch (IOException ex) {
+				logger.debug("Error closing socket to "+remoteId);
+			} catch (NullPointerException npe) {
+				logger.debug("Socket already closed");
+			}
 
-    /**
-     * Thread used to send packets to the remote server.
-     */
-    private class SenderThread extends Thread {
+			socket = null;
+			socketOutStream = null;
+			socketInStream = null;
+		}
 
-        public SenderThread() {
-            super("Sender for " + remoteId);
-        }
+		connectLock.unlock();
+	}
 
-        @Override
-        public void run() {
-            byte[] data = null;
+	private void waitAndConnect() {
+		if (doWork) {
+			try {
+				Thread.sleep(POOL_TIME);
+			} catch (InterruptedException ie) {
+			}
 
-            while (doWork) {
-                //get a message to be sent
-                try {
-                    data = outQueue.poll(POOL_TIME, TimeUnit.MILLISECONDS);
-                } catch (InterruptedException ex) {
-                }
+			outQueue.clear();
+			reconnect(null);
+		}
+	}
 
-                if (data != null) {
+	/**
+	 * Thread used to send packets to the remote server.
+	 */
+	private class SenderThread extends Thread {
+
+		public SenderThread() {
+			super("Sender for " + remoteId);
+		}
+
+		@Override
+		public void run() {
+			byte[] data = null;
+
+			while (doWork) {
+				//get a message to be sent
+				try {
+					data = outQueue.poll(POOL_TIME, TimeUnit.MILLISECONDS);
+				} catch (InterruptedException ex) {
+				}
+
+				if (data != null) {
 					logger.trace("Sending data to, RemoteId:{}", remoteId);
 					sendBytes(data);
 				}
-            }
+			}
 
-            logger.debug("Sender for " + remoteId + " stopped!");
-        }
-    }
+			logger.debug("Sender for " + remoteId + " stopped!");
+		}
+	}
 
-    /**
-     * Thread used to receive packets from the remote server.
-     */
-    protected class ReceiverThread extends Thread {
+	/**
+	 * Thread used to receive packets from the remote server.
+	 */
+	protected class ReceiverThread extends Thread {
 
-        public ReceiverThread() {
-            super("Receiver for " + remoteId);
-        }
+		public ReceiverThread() {
+			super("Receiver for " + remoteId);
+		}
 
-        @Override
-        public void run() {
-          
-        	while (doWork) {
+		@Override
+		public void run() {
+
+			while (doWork) {
 				if (socket != null && socketInStream != null) {
 
 					try {
@@ -434,27 +475,27 @@ public class ServerConnection {
 					waitAndConnect();
 				}
 			}
-        }
-    }
+		}
+	}
 
-    //******* EDUARDO BEGIN: special thread for receiving messages indicating the entrance into the system, coming from the TTP **************//
-    // Simly pass the messages to the replica, indicating its entry into the system
-    //TODO: Ask eduardo why a new thread is needed!!! 
-    //TODO2: Remove all duplicated code
+	//******* EDUARDO BEGIN: special thread for receiving messages indicating the entrance into the system, coming from the TTP **************//
+	// Simly pass the messages to the replica, indicating its entry into the system
+	//TODO: Ask eduardo why a new thread is needed!!! 
+	//TODO2: Remove all duplicated code
 
-    /**
-     * Thread used to receive packets from the remote server.
-     */
-    protected class TTPReceiverThread extends Thread {
+	/**
+	 * Thread used to receive packets from the remote server.
+	 */
+	protected class TTPReceiverThread extends Thread {
 
-        private ServiceReplica replica;
+		private ServiceReplica replica;
 
-        public TTPReceiverThread(ServiceReplica replica) {
-            super("TTPReceiver for " + remoteId);
-            this.replica = replica;
-        }
+		public TTPReceiverThread(ServiceReplica replica) {
+			super("TTPReceiver for " + remoteId);
+			this.replica = replica;
+		}
 
-        @Override
+		@Override
 		public void run() {
 
 			while (doWork) {
@@ -492,11 +533,11 @@ public class ServerConnection {
 				}
 			}
 		}
-    }
-        //******* EDUARDO END **************//
-    
-    
-    /**
+	}
+	//******* EDUARDO END **************//
+
+
+	/**
 	 * Deal with the creation of SSL/TLS connection.
 	 *  Author: Tulio A. Ribeiro
 	 *  
@@ -565,6 +606,33 @@ public class ServerConnection {
 				public void handshakeCompleted(HandshakeCompletedEvent event) {
 					logger.info("SSL/TLS handshake complete!, Id:{}" + "  ## CipherSuite: {}.", remoteId,
 							event.getCipherSuite());
+//					if(dhParameters != null) { //If SGX is activated.
+//						try {
+//							DataOutputStream out = new DataOutputStream(event.getSocket().getOutputStream());
+//							DataInputStream in = new DataInputStream(event.getSocket().getInputStream());
+//
+//							//Send dhInformation:
+//							out.write(dhParameters.length);
+//							logger.info("Sent byte[] length");
+//							out.write(dhParameters, 0, dhParameters.length);
+//							logger.info("Sent DH parameters");
+//
+//							//Wait response:
+//							byte[] otherParams = new byte[in.read()];
+//							in.read(otherParams, 0, otherParams.length);
+//							logger.info("Read length of parameters and byte[]");
+//
+//							//Get Enclave and create DH key.
+//							SgxFunctions enclave = serviceRep.getEnclave();
+//							sharedDhKey = enclave.jni_calculate_shared_dh(otherParams);
+//							logger.info("Calculated DH shared key");
+//
+//
+//						} catch (IOException e) {
+//							logger.error("Error opening OutputStream after Handshake.");
+//						}
+//					}
+
 				}
 			});
 
@@ -572,7 +640,9 @@ public class ServerConnection {
 
 			ServersCommunicationLayer.setSSLSocketOptions(this.socket);
 			new DataOutputStream(this.socket.getOutputStream())
-					.writeInt(this.controller.getStaticConf().getProcessId());
+			.writeInt(this.controller.getStaticConf().getProcessId());
+			this.logger.info("Writing info");
+
 
 		} catch (SocketException e) {
 			logger.error("Connection refused (SocketException)");

@@ -12,14 +12,16 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-*/
+ */
 package bftsmart.communication.server;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
@@ -27,22 +29,16 @@ import java.net.SocketTimeoutException;
 import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.security.Security;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
-
-import bftsmart.communication.SystemMessage;
-import bftsmart.reconfiguration.ServerViewController;
-import bftsmart.tom.ServiceReplica;
-import bftsmart.tom.util.TOMUtil;
-import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Random;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
@@ -58,6 +54,11 @@ import javax.net.ssl.TrustManagerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import bftsmart.communication.SystemMessage;
+import bftsmart.reconfiguration.ServerViewController;
+import bftsmart.tom.ServiceReplica;
+import bftsmart.tom.util.TOMUtil;
+
 /**
  *
  * @author alysson
@@ -71,32 +72,33 @@ import org.slf4j.LoggerFactory;
  * 
  * The command generates the secret key.*/ 
 //## Elliptic Curve 
-  //$keytool -genkey -keyalg EC -alias bftsmartEC -keypass MySeCreT_2hMOygBwY -keystore ./ecKeyPair -dname "CN=BFT-SMaRT" 
-  //$keytool -importkeystore -srckeystore ./ecKeyPair -destkeystore ./ecKeyPair -deststoretype pkcs12
+//$keytool -genkey -keyalg EC -alias bftsmartEC -keypass MySeCreT_2hMOygBwY -keystore ./ecKeyPair -dname "CN=BFT-SMaRT" 
+//$keytool -importkeystore -srckeystore ./ecKeyPair -destkeystore ./ecKeyPair -deststoretype pkcs12
 
 //## RSA 
-  //$keytool -genkey -keyalg RSA -keysize 2048 -alias bftsmartRSA -keypass MySeCreT_2hMOygBwY -keystore ./RSA_KeyPair_2048.pkcs12 -dname "CN=BFT-SMaRT"
-  //$keytool -importkeystore -srckeystore ./RSA_KeyPair_2048.pkcs12 -destkeystore ./RSA_KeyPair_2048.pkcs12 -deststoretype pkcs12
- 
+//$keytool -genkey -keyalg RSA -keysize 2048 -alias bftsmartRSA -keypass MySeCreT_2hMOygBwY -keystore ./RSA_KeyPair_2048.pkcs12 -dname "CN=BFT-SMaRT"
+//$keytool -importkeystore -srckeystore ./RSA_KeyPair_2048.pkcs12 -destkeystore ./RSA_KeyPair_2048.pkcs12 -deststoretype pkcs12
+
 
 public class ServersCommunicationLayer extends Thread {
-    
-    private Logger logger = LoggerFactory.getLogger(this.getClass());
+
+	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
 
-    private ServerViewController controller;
-    private LinkedBlockingQueue<SystemMessage> inQueue;
-    private HashMap<Integer, ServerConnection> connections = new HashMap<>();
-    private ServerSocket serverSocket;
-    private int me;
-    private boolean doWork = true;
-    private Lock connectionsLock = new ReentrantLock();
-    private ReentrantLock waitViewLock = new ReentrantLock();
-    private List<PendingConnection> pendingConn = new LinkedList<PendingConnection>();
-    private ServiceReplica replica;
-    
-    
-    /**
+	private ServerViewController controller;
+	private LinkedBlockingQueue<SystemMessage> inQueue;
+	private HashMap<Integer, ServerConnection> connections = new HashMap<>();
+	private HashMap<Integer, byte[]> sharedKeys;
+	private ServerSocket serverSocket;
+	private int me;
+	private boolean doWork = true;
+	private Lock connectionsLock = new ReentrantLock();
+	private ReentrantLock waitViewLock = new ReentrantLock();
+	private List<PendingConnection> pendingConn = new LinkedList<PendingConnection>();
+	private ServiceReplica replica;
+
+	private byte[] dh_parameters; //con-bft parameters;
+	/**
 	 * Tulio A. Ribeiro
 	 * SSL / TLS.
 	 */
@@ -111,35 +113,36 @@ public class ServersCommunicationLayer extends Thread {
 	private SSLServerSocket serverSocketSSLTLS;
 	private String ssltlsProtocolVersion;
 
-    public ServersCommunicationLayer(ServerViewController controller,
-            LinkedBlockingQueue<SystemMessage> inQueue, 
-            ServiceReplica replica) throws Exception {
+	public ServersCommunicationLayer(ServerViewController controller,
+			LinkedBlockingQueue<SystemMessage> inQueue, 
+			ServiceReplica replica) throws Exception {
+		this.logger.info("Starting CommunicationLayer");
 
-        this.controller = controller;
-        this.inQueue = inQueue;
-        this.me = controller.getStaticConf().getProcessId();
-        this.replica = replica;
-        this.ssltlsProtocolVersion = controller.getStaticConf().getSSLTLSProtocolVersion();
+		this.controller = controller;
+		this.inQueue = inQueue;
+		this.me = controller.getStaticConf().getProcessId();
+		this.replica = replica;
+		this.ssltlsProtocolVersion = controller.getStaticConf().getSSLTLSProtocolVersion();
 
-        String myAddress;
-        String confAddress =
-                    controller.getStaticConf().getRemoteAddress(controller.getStaticConf().getProcessId()).getAddress().getHostAddress();
-        
-        if (InetAddress.getLoopbackAddress().getHostAddress().equals(confAddress)) {
-            myAddress = InetAddress.getLoopbackAddress().getHostAddress();
-            }
-        else if (controller.getStaticConf().getBindAddress().equals("")) {
-            myAddress = InetAddress.getLocalHost().getHostAddress();
-            //If the replica binds to the loopback address, clients will not be able to connect to replicas.
-            //To solve that issue, we bind to the address supplied in config/hosts.config instead.
-            if (InetAddress.getLoopbackAddress().getHostAddress().equals(myAddress) && !myAddress.equals(confAddress)) {
-                myAddress = confAddress;
-            }
-        } else {
-            myAddress = controller.getStaticConf().getBindAddress();
-        }
-        
-        int myPort = controller.getStaticConf().getServerToServerPort(controller.getStaticConf().getProcessId());
+		String myAddress;
+		String confAddress =
+				controller.getStaticConf().getRemoteAddress(controller.getStaticConf().getProcessId()).getAddress().getHostAddress();
+
+		if (InetAddress.getLoopbackAddress().getHostAddress().equals(confAddress)) {
+			myAddress = InetAddress.getLoopbackAddress().getHostAddress();
+		}
+		else if (controller.getStaticConf().getBindAddress().equals("")) {
+			myAddress = InetAddress.getLocalHost().getHostAddress();
+			//If the replica binds to the loopback address, clients will not be able to connect to replicas.
+			//To solve that issue, we bind to the address supplied in config/hosts.config instead.
+			if (InetAddress.getLoopbackAddress().getHostAddress().equals(myAddress) && !myAddress.equals(confAddress)) {
+				myAddress = confAddress;
+			}
+		} else {
+			myAddress = controller.getStaticConf().getBindAddress();
+		}
+
+		int myPort = controller.getStaticConf().getServerToServerPort(controller.getStaticConf().getProcessId());
 
 		FileInputStream fis = null;
 		try {
@@ -179,98 +182,192 @@ public class ServersCommunicationLayer extends Thread {
 		serverSocketSSLTLS.setReuseAddress(true);
 		serverSocketSSLTLS.setNeedClientAuth(true);
 		serverSocketSSLTLS.setWantClientAuth(true);
-		
+
 
 		SecretKeyFactory fac = TOMUtil.getSecretFactory();
 		PBEKeySpec spec = TOMUtil.generateKeySpec(SECRET.toCharArray());
 		selfPwd = fac.generateSecret(spec);
-        
-      //Try connecting if a member of the current view. Otherwise, wait until the Join has been processed!
-        if (controller.isInCurrentView()) {
-            int[] initialV = controller.getCurrentViewAcceptors();
-            for (int i = 0; i < initialV.length; i++) {
-                if (initialV[i] != me) {
-                    getConnection(initialV[i]);
-                }
-            }
-        }
-        
-        start();
-    }
 
-    public SecretKey getSecretKey(int id) {
-        if (id == controller.getStaticConf().getProcessId()) 
-        	return selfPwd;
-        else return connections.get(id).getSecretKey();
-    }
+		//Try connecting if a member of the current view. Otherwise, wait until the Join has been processed!
+		if (controller.isInCurrentView()) {
+			int[] initialV = controller.getCurrentViewAcceptors();
+			for (int i = 0; i < initialV.length; i++) {
+				if (initialV[i] != me) {
+					getConnection(initialV[i]);
+				}
+			}
+		}
 
-    //******* EDUARDO BEGIN **************//
-    public void updateConnections() {
-        connectionsLock.lock();
+		start();
+	}
 
-        if (this.controller.isInCurrentView()) {
+	//SGX-Enabled communication Layer:
+	public ServersCommunicationLayer(ServerViewController controller, LinkedBlockingQueue<SystemMessage> inQueue, ServiceReplica replica,byte[] parameters) throws Exception{
+		this.logger.info("Starting CommunicationLayer");
+		this.sharedKeys = new HashMap<>();
+		this.dh_parameters = parameters;
+		if(dh_parameters == null)
+			System.out.println("Null DH.");
 
-            Iterator<Integer> it = this.connections.keySet().iterator();
-            List<Integer> toRemove = new LinkedList<Integer>();
-            while (it.hasNext()) {
-                int rm = it.next();
-                if (!this.controller.isCurrentViewMember(rm)) {
-                    toRemove.add(rm);
-                }
-            }
-            for (int i = 0; i < toRemove.size(); i++) {
-                this.connections.remove(toRemove.get(i)).shutdown();
-            }
+		this.controller = controller;
+		this.inQueue = inQueue;
+		this.me = controller.getStaticConf().getProcessId();
+		this.replica = replica;
+		this.ssltlsProtocolVersion = controller.getStaticConf().getSSLTLSProtocolVersion();
 
-            int[] newV = controller.getCurrentViewAcceptors();
-            for (int i = 0; i < newV.length; i++) {
-                if (newV[i] != me) {
-                    getConnection(newV[i]);
-                }
-            }
-        } else {
+		String myAddress;
+		String confAddress =
+				controller.getStaticConf().getRemoteAddress(controller.getStaticConf().getProcessId()).getAddress().getHostAddress();
 
-            Iterator<Integer> it = this.connections.keySet().iterator();
-            while (it.hasNext()) {
-                this.connections.get(it.next()).shutdown();
-            }
-        }
+		if (InetAddress.getLoopbackAddress().getHostAddress().equals(confAddress)) {
+			myAddress = InetAddress.getLoopbackAddress().getHostAddress();
+		}
+		else if (controller.getStaticConf().getBindAddress().equals("")) {
+			myAddress = InetAddress.getLocalHost().getHostAddress();
+			//If the replica binds to the loopback address, clients will not be able to connect to replicas.
+			//To solve that issue, we bind to the address supplied in config/hosts.config instead.
+			if (InetAddress.getLoopbackAddress().getHostAddress().equals(myAddress) && !myAddress.equals(confAddress)) {
+				myAddress = confAddress;
+			}
+		} else {
+			myAddress = controller.getStaticConf().getBindAddress();
+		}
+		
+		this.logger.info("Configured Static Addresses.");
 
-        connectionsLock.unlock();
-    }
+		int myPort = controller.getStaticConf().getServerToServerPort(controller.getStaticConf().getProcessId());
 
-    private ServerConnection getConnection(int remoteId) {
-        connectionsLock.lock();
-        ServerConnection ret = this.connections.get(remoteId);
-        if (ret == null) {
-            ret = new ServerConnection(controller, null, 
-            		remoteId, this.inQueue, this.replica);
-            this.connections.put(remoteId, ret);
-        }
-        connectionsLock.unlock();
-        return ret;
-    }
-    //******* EDUARDO END **************//
+		FileInputStream fis = null;
+		try {
+			fis = new FileInputStream("config/keysSSL_TLS/" + controller.getStaticConf().getSSLTLSKeyStore());
+			ks = KeyStore.getInstance(KeyStore.getDefaultType());
+			ks.load(fis, SECRET.toCharArray());
+		} finally {
+			if (fis != null) {
+				fis.close();
+			}
+		}
+
+		String algorithm = Security.getProperty("ssl.KeyManagerFactory.algorithm");
+		kmf = KeyManagerFactory.getInstance(algorithm);
+		kmf.init(ks, SECRET.toCharArray());
+		this.logger.info("KeyManagerFactory started.");
+
+		trustMgrFactory = TrustManagerFactory.getInstance(algorithm);
+		trustMgrFactory.init(ks);
+
+		context = SSLContext.getInstance(this.ssltlsProtocolVersion);
+		context.init(kmf.getKeyManagers(), trustMgrFactory.getTrustManagers(), new SecureRandom());
+
+		serverSocketFactory = context.getServerSocketFactory();
+		this.serverSocketSSLTLS = (SSLServerSocket) serverSocketFactory.createServerSocket(myPort, 100,
+				InetAddress.getByName(myAddress));
+
+		serverSocketSSLTLS.setEnabledCipherSuites(this.controller.getStaticConf().getEnabledCiphers());
+
+		String[] ciphers = serverSocketFactory.getSupportedCipherSuites();
+		for (int i = 0; i < ciphers.length; i++) {
+			logger.trace("Supported Cipher: {} ", ciphers[i]);
+		}
+
+		//serverSocketSSLTLS.setPerformancePreferences(0, 2, 1);
+		//serverSocketSSLTLS.setSoTimeout(connectionTimeoutMsec);
+		serverSocketSSLTLS.setEnableSessionCreation(true);
+		serverSocketSSLTLS.setReuseAddress(true);
+		serverSocketSSLTLS.setNeedClientAuth(true);
+		serverSocketSSLTLS.setWantClientAuth(true);
 
 
-    public final void send(int[] targets, SystemMessage sm, boolean useMAC) {
-        ByteArrayOutputStream bOut = new ByteArrayOutputStream(248);
-        try {
-            new ObjectOutputStream(bOut).writeObject(sm);
-        } catch (IOException ex) {
-            logger.error("Failed to serialize message", ex);
-        }
+		SecretKeyFactory fac = TOMUtil.getSecretFactory();
+		PBEKeySpec spec = TOMUtil.generateKeySpec(SECRET.toCharArray());
+		selfPwd = fac.generateSecret(spec);
 
-        byte[] data = bOut.toByteArray();
-        
-        // this shuffling is done to prevent the replica with the lowest ID/index  from being always
-        // the last one receiving the messages, which can result in that replica  to become consistently
-        // delayed in relation to the others.
-        /*Tulio A. Ribeiro*/
-        Integer[] targetsShuffled = Arrays.stream( targets ).boxed().toArray( Integer[]::new );
-        Collections.shuffle(Arrays.asList(targetsShuffled), new Random(System.nanoTime())); 
+		//Try connecting if a member of the current view. Otherwise, wait until the Join has been processed!
+		if (controller.isInCurrentView()) {
+			int[] initialV = controller.getCurrentViewAcceptors();
+			for (int i = 0; i < initialV.length; i++) {
+				if (initialV[i] != me) {
+					getConnection(initialV[i]);
+				}
+			}
+		}
 
-        for (int target : targetsShuffled) {
+		start();
+	}
+
+	public SecretKey getSecretKey(int id) {
+		if (id == controller.getStaticConf().getProcessId()) 
+			return selfPwd;
+		else return connections.get(id).getSecretKey();
+	}
+
+	//******* EDUARDO BEGIN **************//
+	public void updateConnections() {
+		connectionsLock.lock();
+
+		if (this.controller.isInCurrentView()) {
+
+			Iterator<Integer> it = this.connections.keySet().iterator();
+			List<Integer> toRemove = new LinkedList<Integer>();
+			while (it.hasNext()) {
+				int rm = it.next();
+				if (!this.controller.isCurrentViewMember(rm)) {
+					toRemove.add(rm);
+				}
+			}
+			for (int i = 0; i < toRemove.size(); i++) {
+				this.connections.remove(toRemove.get(i)).shutdown();
+			}
+
+			int[] newV = controller.getCurrentViewAcceptors();
+			for (int i = 0; i < newV.length; i++) {
+				if (newV[i] != me) {
+					getConnection(newV[i]);
+				}
+			}
+		} else {
+
+			Iterator<Integer> it = this.connections.keySet().iterator();
+			while (it.hasNext()) {
+				this.connections.get(it.next()).shutdown();
+			}
+		}
+
+		connectionsLock.unlock();
+	}
+
+	private ServerConnection getConnection(int remoteId) {
+		connectionsLock.lock();
+		ServerConnection ret = this.connections.get(remoteId);
+		if (ret == null) {
+			ret = new ServerConnection(controller, null, 
+					remoteId, this.inQueue, this.replica);
+			this.connections.put(remoteId, ret);
+		}
+		connectionsLock.unlock();
+		return ret;
+	}
+	//******* EDUARDO END **************//
+
+
+	public final void send(int[] targets, SystemMessage sm, boolean useMAC) {
+		ByteArrayOutputStream bOut = new ByteArrayOutputStream(248);
+		try {
+			new ObjectOutputStream(bOut).writeObject(sm);
+		} catch (IOException ex) {
+			logger.error("Failed to serialize message", ex);
+		}
+
+		byte[] data = bOut.toByteArray();
+
+		// this shuffling is done to prevent the replica with the lowest ID/index  from being always
+		// the last one receiving the messages, which can result in that replica  to become consistently
+		// delayed in relation to the others.
+		/*Tulio A. Ribeiro*/
+		Integer[] targetsShuffled = Arrays.stream( targets ).boxed().toArray( Integer[]::new );
+		Collections.shuffle(Arrays.asList(targetsShuffled), new Random(System.nanoTime())); 
+
+		for (int target : targetsShuffled) {
 			try {
 				if (target == me) {
 					sm.authenticated = true;
@@ -284,108 +381,138 @@ public class ServersCommunicationLayer extends Thread {
 				logger.error("Interruption while inserting message into inqueue", ex);
 			}
 		}
-    }
+	}
 
-    public void shutdown() {
-        
-        logger.info("Shutting down replica sockets");
-        
-        doWork = false;
+	public void shutdown() {
 
-        //******* EDUARDO BEGIN **************//
-        int[] activeServers = controller.getCurrentViewAcceptors();
+		logger.info("Shutting down replica sockets");
 
-        for (int i = 0; i < activeServers.length; i++) {
-            if (me != activeServers[i]) {
-                getConnection(activeServers[i]).shutdown();
-            }
-        }
-    }
+		doWork = false;
 
-    //******* EDUARDO BEGIN **************//
-    public void joinViewReceived() {
-        waitViewLock.lock();
-        for (int i = 0; i < pendingConn.size(); i++) {
-            PendingConnection pc = pendingConn.get(i);
-            try {
-                establishConnection(pc.s, pc.remoteId);
-            } catch (Exception e) {
-                logger.error("Failed to estabilish connection to " + pc.remoteId,e);
-            }
-        }
+		//******* EDUARDO BEGIN **************//
+		int[] activeServers = controller.getCurrentViewAcceptors();
 
-        pendingConn.clear();
+		for (int i = 0; i < activeServers.length; i++) {
+			if (me != activeServers[i]) {
+				getConnection(activeServers[i]).shutdown();
+			}
+		}
+	}
 
-        waitViewLock.unlock();
-    }
-    //******* EDUARDO END **************//
+	//******* EDUARDO BEGIN **************//
+	public void joinViewReceived() {
+		waitViewLock.lock();
+		for (int i = 0; i < pendingConn.size(); i++) {
+			PendingConnection pc = pendingConn.get(i);
+			try {
+				establishConnection(pc.s, pc.remoteId);
+			} catch (Exception e) {
+				logger.error("Failed to estabilish connection to " + pc.remoteId,e);
+			}
+		}
 
-    @Override
-    public void run() {
-        while (doWork) {
-            try {
+		pendingConn.clear();
 
-                //System.out.println("Waiting for server connections");
+		waitViewLock.unlock();
+	}
+	//******* EDUARDO END **************//
 
-            	SSLSocket newSocket = (SSLSocket) serverSocketSSLTLS.accept();
+	@Override
+	public void run() {
+		this.logger.info("Starting Comm Layer Thread.");
+		while (doWork) {
+			try {
+
+				System.out.println("Waiting for server connections");
+
+				SSLSocket newSocket = (SSLSocket) serverSocketSSLTLS.accept();
 				setSSLSocketOptions(newSocket);
 
-                int remoteId = new DataInputStream(newSocket.getInputStream()).readInt();
 
-                //******* EDUARDO BEGIN **************//
-                if (!this.controller.isInCurrentView() &&
-                     (this.controller.getStaticConf().getTTPId() != remoteId)) {
-                    waitViewLock.lock();
-                    pendingConn.add(new PendingConnection(newSocket, remoteId));
-                    waitViewLock.unlock();
-                } else {
+				int remoteId = new DataInputStream(newSocket.getInputStream()).readInt();
+				this.logger.info("SSL Socket ACCEPTED from ID: " + remoteId);
+
+//				if(this.sharedKeys != null) { //Meaning SGX is enabled, this is only called with SGX parameters.
+//					
+//					DataInputStream in = new DataInputStream(newSocket.getInputStream());
+//					DataOutputStream out = new DataOutputStream(newSocket.getOutputStream());
+//
+//					//Read first:
+//					this.logger.info("Reading DH parameters from " + remoteId);
+//					byte[] otherDh = new byte[in.read()];
+//					in.read(otherDh, 0, otherDh.length);
+//
+//					//Now send ours back:
+//					this.logger.info("Sending DH parameters now to replica " + remoteId);
+//					out.write(this.dh_parameters.length);
+//					out.write(this.dh_parameters,0,this.dh_parameters.length);
+//					this.logger.info("Sent parameters.");
+//
+//					byte[] dhSharedKey = replica.getEnclave().jni_calculate_shared_dh(otherDh);
+//					if(dhSharedKey != null) {
+//						this.sharedKeys.put(remoteId, dhSharedKey);
+//						this.logger.info("Shared Key with replica" + remoteId + " calculated and stored.");
+//					}
+//					else
+//						this.logger.error("Error: Dh not calculated.");
+//				}
+
+
+
+				//******* EDUARDO BEGIN **************//
+				if (!this.controller.isInCurrentView() &&
+						(this.controller.getStaticConf().getTTPId() != remoteId)) {
+					waitViewLock.lock();
+					pendingConn.add(new PendingConnection(newSocket, remoteId));
+					waitViewLock.unlock();
+				} else {
 					logger.debug("Trying establish connection with Replica: {}", remoteId);
-                    establishConnection(newSocket, remoteId);
-                }
-                //******* EDUARDO END **************//
+					establishConnection(newSocket, remoteId);
+				}
+				//******* EDUARDO END **************//
 
-            } catch (SocketTimeoutException ex) {
+			} catch (SocketTimeoutException ex) {
 				logger.trace("Server socket timed out, retrying");
 			} catch (SSLHandshakeException sslex) {
 				sslex.printStackTrace();
 			} catch (IOException ex) {
 				logger.error("Problem during thread execution", ex);
 			}
-        }
+		}
 
-        try {
-            serverSocket.close();
-        } catch (IOException ex) {
-            logger.error("Failed to close server socket", ex);
-        }
+		try {
+			serverSocket.close();
+		} catch (IOException ex) {
+			logger.error("Failed to close server socket", ex);
+		}
 
-        logger.info("ServerCommunicationLayer stopped.");
-    }
+		logger.info("ServerCommunicationLayer stopped.");
+	}
 
-    //******* EDUARDO BEGIN **************//
-    private void establishConnection(SSLSocket newSocket, int remoteId) throws IOException {
-        if ((this.controller.getStaticConf().getTTPId() == remoteId) || this.controller.isCurrentViewMember(remoteId)) {
-            connectionsLock.lock();
-            if (this.connections.get(remoteId) == null) { //This must never happen!!!
-                //first time that this connection is being established
-                //System.out.println("THIS DOES NOT HAPPEN....."+remoteId);
-                this.connections.put(remoteId,
-                			new ServerConnection(controller, newSocket, remoteId, inQueue, replica));
-            } else {
-                //reconnection	
-            	logger.debug("ReConnecting with replica: {}", remoteId);
-                this.connections.get(remoteId).reconnect(newSocket);
-            }
-            connectionsLock.unlock();
+	//******* EDUARDO BEGIN **************//
+	private void establishConnection(SSLSocket newSocket, int remoteId) throws IOException {
+		if ((this.controller.getStaticConf().getTTPId() == remoteId) || this.controller.isCurrentViewMember(remoteId)) {
+			connectionsLock.lock();
+			if (this.connections.get(remoteId) == null) { //This must never happen!!!
+				//first time that this connection is being established
+				//System.out.println("THIS DOES NOT HAPPEN....."+remoteId);
+				this.connections.put(remoteId,
+						new ServerConnection(controller, newSocket, remoteId, inQueue, replica));
+			} else {
+				//reconnection	
+				logger.debug("ReConnecting with replica: {}", remoteId);
+				this.connections.get(remoteId).reconnect(newSocket);
+			}
+			connectionsLock.unlock();
 
-        } else {
+		} else {
 			logger.debug("Closing connection with replica: {}", remoteId);
-            newSocket.close();
-        }
-    }
-    //******* EDUARDO END **************//
+			newSocket.close();
+		}
+	}
+	//******* EDUARDO END **************//
 
-    public static void setSSLSocketOptions(SSLSocket socket) {
+	public static void setSSLSocketOptions(SSLSocket socket) {
 		try {
 			socket.setTcpNoDelay(true);
 		} catch (SocketException ex) {
@@ -393,43 +520,43 @@ public class ServersCommunicationLayer extends Thread {
 			error("Failed to set TCPNODELAY", ex);
 		}
 	}
-    
-    public static void setSocketOptions(Socket socket) {
-        try {
-            socket.setTcpNoDelay(true);
-        } catch (SocketException ex) {
-            LoggerFactory.getLogger(ServersCommunicationLayer.class)
-            .error("Failed to set TCPNODELAY", ex);
-        }
-    }
 
-    @Override
-    public String toString() {
-        String str = "inQueue=" + inQueue.toString();
-        int[] activeServers = controller.getCurrentViewAcceptors();
-        for (int i = 0; i < activeServers.length; i++) {
-            if (me != activeServers[i]) {
-                str += ", connections[" + activeServers[i] + "]: outQueue=" + getConnection(activeServers[i]).outQueue;
-            }
-        }
-        return str;
-    }
+	public static void setSocketOptions(Socket socket) {
+		try {
+			socket.setTcpNoDelay(true);
+		} catch (SocketException ex) {
+			LoggerFactory.getLogger(ServersCommunicationLayer.class)
+			.error("Failed to set TCPNODELAY", ex);
+		}
+	}
+
+	@Override
+	public String toString() {
+		String str = "inQueue=" + inQueue.toString();
+		int[] activeServers = controller.getCurrentViewAcceptors();
+		for (int i = 0; i < activeServers.length; i++) {
+			if (me != activeServers[i]) {
+				str += ", connections[" + activeServers[i] + "]: outQueue=" + getConnection(activeServers[i]).outQueue;
+			}
+		}
+		return str;
+	}
 
 
-    //******* EDUARDO BEGIN: List entry that stores pending connections,
-    // as a server may accept connections only after learning the current view,
-    // i.e., after receiving the response to the join*************//
-    // This is for avoiding that the server accepts connectsion from everywhere
-    public class PendingConnection {
+	//******* EDUARDO BEGIN: List entry that stores pending connections,
+	// as a server may accept connections only after learning the current view,
+	// i.e., after receiving the response to the join*************//
+	// This is for avoiding that the server accepts connectsion from everywhere
+	public class PendingConnection {
 
-        public SSLSocket s;
-        public int remoteId;
+		public SSLSocket s;
+		public int remoteId;
 
-        public PendingConnection(SSLSocket s, int remoteId) {
-            this.s = s;
-            this.remoteId = remoteId;
-        }
-    }
+		public PendingConnection(SSLSocket s, int remoteId) {
+			this.s = s;
+			this.remoteId = remoteId;
+		}
+	}
 
-    //******* EDUARDO END **************//
+	//******* EDUARDO END **************//
 }
