@@ -116,7 +116,7 @@ public class ServersCommunicationLayer extends Thread {
 	public ServersCommunicationLayer(ServerViewController controller,
 			LinkedBlockingQueue<SystemMessage> inQueue, 
 			ServiceReplica replica) throws Exception {
-		this.logger.info("Starting CommunicationLayer");
+		this.logger.info("Starting Regular CommunicationLayer");
 
 		this.controller = controller;
 		this.inQueue = inQueue;
@@ -203,12 +203,8 @@ public class ServersCommunicationLayer extends Thread {
 
 	//SGX-Enabled communication Layer:
 	public ServersCommunicationLayer(ServerViewController controller, LinkedBlockingQueue<SystemMessage> inQueue, ServiceReplica replica,byte[] parameters) throws Exception{
-		this.logger.info("Starting CommunicationLayer");
+		this.logger.info("Starting SGX-Enabled CommunicationLayer");
 		this.sharedKeys = new HashMap<>();
-		this.dh_parameters = parameters;
-		if(dh_parameters == null)
-			System.out.println("Null DH.");
-
 		this.controller = controller;
 		this.inQueue = inQueue;
 		this.me = controller.getStaticConf().getProcessId();
@@ -232,10 +228,12 @@ public class ServersCommunicationLayer extends Thread {
 		} else {
 			myAddress = controller.getStaticConf().getBindAddress();
 		}
-		
+
 		this.logger.info("Configured Static Addresses.");
 
 		int myPort = controller.getStaticConf().getServerToServerPort(controller.getStaticConf().getProcessId());
+
+		this.logger.info("Server port Set.");
 
 		FileInputStream fis = null;
 		try {
@@ -247,6 +245,7 @@ public class ServersCommunicationLayer extends Thread {
 				fis.close();
 			}
 		}
+		this.logger.info("KeyStore Loaded.");
 
 		String algorithm = Security.getProperty("ssl.KeyManagerFactory.algorithm");
 		kmf = KeyManagerFactory.getInstance(algorithm);
@@ -432,30 +431,30 @@ public class ServersCommunicationLayer extends Thread {
 				int remoteId = new DataInputStream(newSocket.getInputStream()).readInt();
 				this.logger.info("SSL Socket ACCEPTED from ID: " + remoteId);
 
-//				if(this.sharedKeys != null) { //Meaning SGX is enabled, this is only called with SGX parameters.
-//					
-//					DataInputStream in = new DataInputStream(newSocket.getInputStream());
-//					DataOutputStream out = new DataOutputStream(newSocket.getOutputStream());
-//
-//					//Read first:
-//					this.logger.info("Reading DH parameters from " + remoteId);
-//					byte[] otherDh = new byte[in.read()];
-//					in.read(otherDh, 0, otherDh.length);
-//
-//					//Now send ours back:
-//					this.logger.info("Sending DH parameters now to replica " + remoteId);
-//					out.write(this.dh_parameters.length);
-//					out.write(this.dh_parameters,0,this.dh_parameters.length);
-//					this.logger.info("Sent parameters.");
-//
-//					byte[] dhSharedKey = replica.getEnclave().jni_calculate_shared_dh(otherDh);
-//					if(dhSharedKey != null) {
-//						this.sharedKeys.put(remoteId, dhSharedKey);
-//						this.logger.info("Shared Key with replica" + remoteId + " calculated and stored.");
-//					}
-//					else
-//						this.logger.error("Error: Dh not calculated.");
-//				}
+				//				if(this.sharedKeys != null) { //Meaning SGX is enabled, this is only called with SGX parameters.
+				//					
+				//					DataInputStream in = new DataInputStream(newSocket.getInputStream());
+				//					DataOutputStream out = new DataOutputStream(newSocket.getOutputStream());
+				//
+				//					//Read first:
+				//					this.logger.info("Reading DH parameters from " + remoteId);
+				//					byte[] otherDh = new byte[in.read()];
+				//					in.read(otherDh, 0, otherDh.length);
+				//
+				//					//Now send ours back:
+				//					this.logger.info("Sending DH parameters now to replica " + remoteId);
+				//					out.write(this.dh_parameters.length);
+				//					out.write(this.dh_parameters,0,this.dh_parameters.length);
+				//					this.logger.info("Sent parameters.");
+				//
+				//					byte[] dhSharedKey = replica.getEnclave().jni_calculate_shared_dh(otherDh);
+				//					if(dhSharedKey != null) {
+				//						this.sharedKeys.put(remoteId, dhSharedKey);
+				//						this.logger.info("Shared Key with replica" + remoteId + " calculated and stored.");
+				//					}
+				//					else
+				//						this.logger.error("Error: Dh not calculated.");
+				//				}
 
 
 

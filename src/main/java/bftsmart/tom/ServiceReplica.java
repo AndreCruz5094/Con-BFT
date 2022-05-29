@@ -17,8 +17,10 @@
 package bftsmart.tom;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.security.Provider;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -61,568 +63,577 @@ import sgxUtils.SgxFunctions;
  * need to organize the replies in batches.
  */
 public class ServiceReplica {
-    
-    private Logger logger = LoggerFactory.getLogger(this.getClass());
-    
-    //Con-BFT usage:
-    private SgxFunctions enclave;
-    private int enclaveId;
-    private byte[] dh_params;
-    private static final String HOME_DIR = System.getProperty("user.dir");
-    
-    
 
-    // replica ID
-    private int id;
-    // Server side comunication system
-    private ServerCommunicationSystem cs = null;
-    private ReplyManager repMan = null;
-    private ServerViewController SVController;
-    private ReentrantLock waitTTPJoinMsgLock = new ReentrantLock();
-    private Condition canProceed = waitTTPJoinMsgLock.newCondition();
-    private Executable executor = null;
-    private Recoverable recoverer = null;
-    private TOMLayer tomLayer = null;
-    private boolean tomStackCreated = false;
-    private ReplicaContext replicaCtx = null;
-    private Replier replier = null;
-    private RequestVerifier verifier = null;
+	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
-    /**
-     * Constructor
-     *
-     * @param id Replica ID
-     * @param executor Executor
-     * @param recoverer Recoverer
-     */
-    public ServiceReplica(int id, Executable executor, Recoverable recoverer) {
-        this(id, "", executor, recoverer, null, new DefaultReplier(), null);
-    }
+	//Con-BFT usage:
+	private SgxFunctions enclave;
+	private int enclaveId;
+	private byte[] dh_params;
+	private static final String HOME_DIR = System.getProperty("user.dir");
 
-    /**
-     * Constructor
-     *
-     * @param id Replica ID
-     * @param executor Executor
-     * @param recoverer Recoverer
-     * @param enclaveId Requests verifier
-     */
-    public ServiceReplica(int id, Executable executor, Recoverable recoverer, int enclaveId) {
-        this(id, "", executor, recoverer, null, new DefaultReplier(), null,enclaveId);
-    }
-    
-    /**
-     * Constructor
-     * 
-     * @see bellow
-     */
-    public ServiceReplica(int id, Executable executor, Recoverable recoverer, RequestVerifier verifier, Replier replier) {
-        this(id, "", executor, recoverer, verifier, replier, null);
-    }
-    
-    /**
-     * Constructor
-     * 
-     * @see bellow
-     */
-    public ServiceReplica(int id, Executable executor, Recoverable recoverer, RequestVerifier verifier, Replier replier, KeyLoader loader, Provider provider) {
-        this(id, "", executor, recoverer, verifier, replier, loader);
-    }
-    /**
-     * Constructor
-     *
-     * @param id Replica ID
-     * @param configHome Configuration directory for BFT-SMART
-     * @param executor The executor implementation
-     * @param recoverer The recoverer implementation
-     * @param verifier Requests Verifier
-     * @param replier Can be used to override the targets of the replies associated to each request.
-     * @param loader Used to load signature keys from disk
-     */
-    public ServiceReplica(int id, String configHome, Executable executor, Recoverable recoverer, RequestVerifier verifier, Replier replier, KeyLoader loader) {
-        this.id = id;
-        this.SVController = new ServerViewController(id, configHome, loader);
-        System.out.println("ServerViewController finished.");
-        this.executor = executor;
-        this.recoverer = recoverer;
-        this.replier = (replier != null ? replier : new DefaultReplier());
-        this.verifier = verifier;
-        System.out.println("Before init.");
-        this.init();
-        this.recoverer.setReplicaContext(replicaCtx);
-        this.replier.setReplicaContext(replicaCtx);
-    }
-    
-    
-    
-    /**
-     * Constructor
-     *
-     * @param id Replica ID
-     * @param configHome Configuration directory for BFT-SMART
-     * @param executor The executor implementation
-     * @param recoverer The recoverer implementation
-     * @param verifier Requests Verifier
-     * @param replier Can be used to override the targets of the replies associated to each request.
-     * @param loader Used to load signature keys from disk
-     * @param enclaveId - id of the Enclave to be initiated.
-     */
-    public ServiceReplica(int id, String configHome, Executable executor, Recoverable recoverer, RequestVerifier verifier, Replier replier, KeyLoader loader, int enclaveId) {
-        this.id = id;
-        this.enclaveId = enclaveId;
-        this.SVController = new ServerViewController(id, configHome, loader);
-        this.executor = executor;
-        this.recoverer = recoverer;
-        this.replier = (replier != null ? replier : new DefaultReplier());
-        this.verifier = verifier;
-        this.initEnclave();
-        this.initSGX();
-        this.recoverer.setReplicaContext(replicaCtx);
-        this.replier.setReplicaContext(replicaCtx);
-    }
-    
-    
-    
-    /**
-     * Function created to initiate the Enclave:
-     */
-    private void initEnclave() {
-    	enclave = new SgxFunctions(this.enclaveId);
-    	try {
-    		File pemFile = new File(HOME_DIR + "/" + this.enclaveId + ".pem");
-    		if(!pemFile.exists()) {
-    			pemFile = SgxFunctions.createPem(this.enclaveId);
-    		}
-    		File enclaveFile = new File(HOME_DIR + "/" + this.enclaveId + "enclave_signed.so");
-    		if(!enclaveFile.exists()) {
-    			enclave.createSignedEnclave(HOME_DIR, pemFile.getAbsolutePath(), enclaveId);
-    			this.logger.info("Enclave signed");
-    		}
-    		else
-    			this.logger.info("Enclave file exists. Starting enclave.");
-			
-			int created = enclave.jni_initialize_enclave(enclaveId,enclaveFile.getAbsolutePath());
-			if(created == -1)
-				this.logger.error("Enclave Failed to create");
+
+
+	// replica ID
+	private int id;
+	// Server side comunication system
+	private ServerCommunicationSystem cs = null;
+	private ReplyManager repMan = null;
+	private ServerViewController SVController;
+	private ReentrantLock waitTTPJoinMsgLock = new ReentrantLock();
+	private Condition canProceed = waitTTPJoinMsgLock.newCondition();
+	private Executable executor = null;
+	private Recoverable recoverer = null;
+	private TOMLayer tomLayer = null;
+	private boolean tomStackCreated = false;
+	private ReplicaContext replicaCtx = null;
+	private Replier replier = null;
+	private RequestVerifier verifier = null;
+
+	/**
+	 * Constructor
+	 *
+	 * @param id Replica ID
+	 * @param executor Executor
+	 * @param recoverer Recoverer
+	 */
+	public ServiceReplica(int id, Executable executor, Recoverable recoverer) {
+		this(id, "", executor, recoverer, null, new DefaultReplier(), null);
+	}
+
+	/**
+	 * Constructor
+	 *
+	 * @param id Replica ID
+	 * @param executor Executor
+	 * @param recoverer Recoverer
+	 * @param enclaveId Requests verifier
+	 */
+	public ServiceReplica(int id, Executable executor, Recoverable recoverer, int enclaveId) {
+		this(id, "", executor, recoverer, null, new DefaultReplier(), null,enclaveId);
+	}
+
+	/**
+	 * Constructor
+	 * 
+	 * @see bellow
+	 */
+	public ServiceReplica(int id, Executable executor, Recoverable recoverer, RequestVerifier verifier, Replier replier) {
+		this(id, "", executor, recoverer, verifier, replier, null);
+	}
+
+	/**
+	 * Constructor
+	 * 
+	 * @see bellow
+	 */
+	public ServiceReplica(int id, Executable executor, Recoverable recoverer, RequestVerifier verifier, Replier replier, KeyLoader loader, Provider provider) {
+		this(id, "", executor, recoverer, verifier, replier, loader);
+	}
+	/**
+	 * Constructor
+	 *
+	 * @param id Replica ID
+	 * @param configHome Configuration directory for BFT-SMART
+	 * @param executor The executor implementation
+	 * @param recoverer The recoverer implementation
+	 * @param verifier Requests Verifier
+	 * @param replier Can be used to override the targets of the replies associated to each request.
+	 * @param loader Used to load signature keys from disk
+	 */
+	public ServiceReplica(int id, String configHome, Executable executor, Recoverable recoverer, RequestVerifier verifier, Replier replier, KeyLoader loader) {
+		this.id = id;
+		this.SVController = new ServerViewController(id, configHome, loader);
+		System.out.println("ServerViewController finished.");
+		this.executor = executor;
+		this.recoverer = recoverer;
+		this.replier = (replier != null ? replier : new DefaultReplier());
+		this.verifier = verifier;
+		System.out.println("Before init.");
+		this.init();
+		this.recoverer.setReplicaContext(replicaCtx);
+		this.replier.setReplicaContext(replicaCtx);
+	}
+
+
+
+	/**
+	 * Constructor
+	 *
+	 * @param id Replica ID
+	 * @param configHome Configuration directory for BFT-SMART
+	 * @param executor The executor implementation
+	 * @param recoverer The recoverer implementation
+	 * @param verifier Requests Verifier
+	 * @param replier Can be used to override the targets of the replies associated to each request.
+	 * @param loader Used to load signature keys from disk
+	 * @param enclaveId - id of the Enclave to be initiated.
+	 */
+	public ServiceReplica(int id, String configHome, Executable executor, Recoverable recoverer, RequestVerifier verifier, Replier replier, KeyLoader loader, int enclaveId) {
+		this.id = id;
+		this.enclaveId = enclaveId;
+		this.SVController = new ServerViewController(id, configHome, loader);
+		this.executor = executor;
+		this.recoverer = recoverer;
+		this.replier = (replier != null ? replier : new DefaultReplier());
+		this.verifier = verifier;
+		this.initEnclave();
+		if(this.dh_params == null)
+			this.init();
+		else
+			this.initSGX();
+		this.recoverer.setReplicaContext(replicaCtx);
+		this.replier.setReplicaContext(replicaCtx);
+	}
+
+
+
+	/**
+	 * Function created to initiate the Enclave:
+	 */
+	private void initEnclave() {
+		this.logger.info("Starting InitEnclave");
+		enclave = new SgxFunctions(this.enclaveId);
+		try {
+			File pemFile = new File(HOME_DIR + "/" + this.enclaveId + ".pem");
+			if(!pemFile.exists()) {
+				pemFile = SgxFunctions.createPem(this.enclaveId);
+			}
+			File enclaveFile = new File(HOME_DIR + "/" + this.enclaveId + "enclave_signed.so");
+			if(!enclaveFile.exists()) {
+				enclave.createSignedEnclave(HOME_DIR, pemFile.getAbsolutePath(), enclaveId);
+				this.logger.info("Enclave signed");
+			}
 			else
+				this.logger.info("Enclave file exists. Starting enclave.");
+			
+			logger.info("ABSOLUTE PATH: " + enclaveFile.getAbsolutePath());
+			byte[] enclaveFilePath = enclaveFile.getAbsolutePath().substring(0).getBytes(StandardCharsets.UTF_8);
+			byte[] correctPath = Arrays.copyOf(enclaveFilePath, enclaveFilePath.length+1);
+			correctPath[correctPath.length-1] = '\0';
+			int created = enclave.jni_initialize_enclave(enclaveId,enclaveFilePath);
+			if(created == 0)
 				this.logger.info("Enclave created.");
-			
-			//Create DH parameters:
-			this.dh_params = this.enclave.jni_sgx_begin_ec_dh(); //Begin the Enclave EC parameters for DH key exchange.
-			this.logger.info("EC-DH Parameters created for Key exchange.");
-			
+			else
+				this.logger.info("Enclave failed to create.");
+//
+//			//Create DH parameters:
+//			this.dh_params = this.enclave.jni_sgx_begin_ec_dh(); //Begin the Enclave EC parameters for DH key exchange.
+//			this.logger.info("EC-DH Parameters created for Key exchange.");
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
-    }
-    
-    
-    private void initSGX() {
-    	 try {
-             cs = new ServerCommunicationSystem(this.SVController, this,this.dh_params);
-             System.out.println("After server comm.");
-         } catch (Exception ex) {
-             logger.error("Failed to initialize replica-to-replica communication system", ex);
-             throw new RuntimeException("Unable to build a communication system.");
-         }
+	}
 
-         if (this.SVController.isInCurrentView()) {
-             logger.info("In current view: " + this.SVController.getCurrentView());
-             initTOMLayer(); // initiaze the TOM layer
-         } else {
-             logger.info("Not in current view: " + this.SVController.getCurrentView());
-             
-             //Not in the initial view, just waiting for the view where the join has been executed
-             logger.info("Waiting for the TTP: " + this.SVController.getCurrentView());
-             waitTTPJoinMsgLock.lock();
-             try {
-                 canProceed.awaitUninterruptibly();
-             } finally {
-                 waitTTPJoinMsgLock.unlock();
-             }
-             
-         }
-         initReplica();
-     }
-    
-    
 
-    // this method initializes the object
-    private void init() {
-        try {
-            cs = new ServerCommunicationSystem(this.SVController, this);
-            System.out.println("After server comm.");
-        } catch (Exception ex) {
-            logger.error("Failed to initialize replica-to-replica communication system", ex);
-            throw new RuntimeException("Unable to build a communication system.");
-        }
+	private void initSGX() {
+		logger.info("Starting initSGX");
+		try {
+			cs = new ServerCommunicationSystem(this.SVController, this,this.dh_params);
+			System.out.println("After server comm.");
+		} catch (Exception ex) {
+			logger.error("Failed to initialize replica-to-replica communication system", ex);
+			throw new RuntimeException("Unable to build a communication system.");
+		}
 
-        if (this.SVController.isInCurrentView()) {
-            logger.info("In current view: " + this.SVController.getCurrentView());
-            initTOMLayer(); // initiaze the TOM layer
-        } else {
-            logger.info("Not in current view: " + this.SVController.getCurrentView());
-            
-            //Not in the initial view, just waiting for the view where the join has been executed
-            logger.info("Waiting for the TTP: " + this.SVController.getCurrentView());
-            waitTTPJoinMsgLock.lock();
-            try {
-                canProceed.awaitUninterruptibly();
-            } finally {
-                waitTTPJoinMsgLock.unlock();
-            }
-            
-        }
-        initReplica();
-    }
+		if (this.SVController.isInCurrentView()) {
+			logger.info("In current view: " + this.SVController.getCurrentView());
+			initTOMLayer(); // initiaze the TOM layer
+		} else {
+			logger.info("Not in current view: " + this.SVController.getCurrentView());
 
-    public void joinMsgReceived(VMMessage msg) {
-        ReconfigureReply r = msg.getReply();
+			//Not in the initial view, just waiting for the view where the join has been executed
+			logger.info("Waiting for the TTP: " + this.SVController.getCurrentView());
+			waitTTPJoinMsgLock.lock();
+			try {
+				canProceed.awaitUninterruptibly();
+			} finally {
+				waitTTPJoinMsgLock.unlock();
+			}
 
-        if (r.getView().isMember(id)) {
-            this.SVController.processJoinResult(r);
+		}
+		initReplica();
+	}
 
-            initTOMLayer(); // initiaze the TOM layer
-            cs.updateServersConnections();
-            this.cs.joinViewReceived();
-            waitTTPJoinMsgLock.lock();
-            canProceed.signalAll();
-            waitTTPJoinMsgLock.unlock();
-        }
-    }
 
-    private void initReplica() {
-    	this.logger.info("Replica Starting.");
-        cs.start();
-        repMan = new ReplyManager(SVController.getStaticConf().getNumRepliers(), cs);
-        this.logger.info("Reply Manager started");
-    }
 
-    public final void receiveReadonlyMessage(TOMMessage message, MessageContext msgCtx) {
-        TOMMessage response;
+	// this method initializes the object
+	private void init() {
+		logger.info("Starting regular init");
+		try {
+			cs = new ServerCommunicationSystem(this.SVController, this);
+			System.out.println("After server comm.");
+		} catch (Exception ex) {
+			logger.error("Failed to initialize replica-to-replica communication system", ex);
+			throw new RuntimeException("Unable to build a communication system.");
+		}
 
-        // This is used to deliver the requests to the application and obtain a reply to deliver
-        //to the clients. The raw decision does not need to be delivered to the recoverable since
-        // it is not associated with any consensus instance, and therefore there is no need for
-        //applications to log it or keep any proof.
-        response = executor.executeUnordered(id, SVController.getCurrentViewId(),
-                (message.getReqType() == TOMMessageType.UNORDERED_HASHED_REQUEST &&
-                        message.getReplyServer() != this.id),message.getContent(), msgCtx);
+		if (this.SVController.isInCurrentView()) {
+			logger.info("In current view: " + this.SVController.getCurrentView());
+			initTOMLayer(); // initiaze the TOM layer
+		} else {
+			logger.info("Not in current view: " + this.SVController.getCurrentView());
 
-        if (response != null) {
-            if (SVController.getStaticConf().getNumRepliers() > 0) {
-                repMan.send(response);
-            } else {
-                cs.send(new int[]{response.getSender()}, response.reply);
-            }
-        }
-    }
-        
-    /**
-     * Stops the service execution at a replica. It will shutdown all threads, stop the requests' timer, and drop all enqueued requests,
-     * thus letting the ServiceReplica object be garbage-collected. From the perspective of the rest of the system, this is equivalent
-     * to a simple crash fault.
-     */
-    public void kill() {        
-        
-        Thread t = new Thread() {
+			//Not in the initial view, just waiting for the view where the join has been executed
+			logger.info("Waiting for the TTP: " + this.SVController.getCurrentView());
+			waitTTPJoinMsgLock.lock();
+			try {
+				canProceed.awaitUninterruptibly();
+			} finally {
+				waitTTPJoinMsgLock.unlock();
+			}
 
-            @Override
-            public void run() {
-                if (tomLayer != null) {   
-                    tomLayer.shutdown();
-                }     
-            }
-        };
-        t.start();
-    }
-        
-    /**
-     * Cleans the object state and reboots execution. From the perspective of the rest of the system,
-     * this is equivalent to a rash followed by a recovery.
-     */
-    public void restart() {        
-        Thread t = new Thread() {
+		}
+		initReplica();
+	}
 
-            @Override
-            public void run() {
-                if (tomLayer != null && cs != null) {   
-                    tomLayer.shutdown();
+	public void joinMsgReceived(VMMessage msg) {
+		ReconfigureReply r = msg.getReply();
 
-                    try {
-                        cs.join();
-                        cs.getServersConn().join();
-                        tomLayer.join();
-                        tomLayer.getDeliveryThread().join();
+		if (r.getView().isMember(id)) {
+			this.SVController.processJoinResult(r);
 
-                    } catch (InterruptedException ex) {
-                        logger.error("Interruption while joining threads", ex);
-                    }
+			initTOMLayer(); // initiaze the TOM layer
+			cs.updateServersConnections();
+			this.cs.joinViewReceived();
+			waitTTPJoinMsgLock.lock();
+			canProceed.signalAll();
+			waitTTPJoinMsgLock.unlock();
+		}
+	}
 
-                    tomStackCreated = false;
-                    tomLayer = null;
-                    cs = null;
+	private void initReplica() {
+		this.logger.info("Replica Starting.");
+		cs.start();
+		repMan = new ReplyManager(SVController.getStaticConf().getNumRepliers(), cs);
+		this.logger.info("Reply Manager started");
+	}
 
-                    init();
-                    recoverer.setReplicaContext(replicaCtx);
-                    replier.setReplicaContext(replicaCtx);
-                
-                }     
-            }
-        };
-        t.start();
-    }
+	public final void receiveReadonlyMessage(TOMMessage message, MessageContext msgCtx) {
+		TOMMessage response;
 
-    public void receiveMessages(int consId[], int regencies[], int leaders[], CertifiedDecision[] cDecs, TOMMessage[][] requests) {
-        int numRequests = 0;
-        int consensusCount = 0;
-        List<TOMMessage> toBatch = new ArrayList<>();
-        List<MessageContext> msgCtxts = new ArrayList<>();
-        boolean noop = true;
+		// This is used to deliver the requests to the application and obtain a reply to deliver
+		//to the clients. The raw decision does not need to be delivered to the recoverable since
+		// it is not associated with any consensus instance, and therefore there is no need for
+		//applications to log it or keep any proof.
+		response = executor.executeUnordered(id, SVController.getCurrentViewId(),
+				(message.getReqType() == TOMMessageType.UNORDERED_HASHED_REQUEST &&
+				message.getReplyServer() != this.id),message.getContent(), msgCtx);
 
-        for (TOMMessage[] requestsFromConsensus : requests) {
+		if (response != null) {
+			if (SVController.getStaticConf().getNumRepliers() > 0) {
+				repMan.send(response);
+			} else {
+				cs.send(new int[]{response.getSender()}, response.reply);
+			}
+		}
+	}
 
-            TOMMessage firstRequest = requestsFromConsensus[0];
-            int requestCount = 0;
-            noop = true;
-            for (TOMMessage request : requestsFromConsensus) {
-                
-                logger.debug("Processing TOMMessage from client " + request.getSender() + " with sequence number " + request.getSequence() + " for session " + request.getSession() + " decided in consensus " + consId[consensusCount]);
+	/**
+	 * Stops the service execution at a replica. It will shutdown all threads, stop the requests' timer, and drop all enqueued requests,
+	 * thus letting the ServiceReplica object be garbage-collected. From the perspective of the rest of the system, this is equivalent
+	 * to a simple crash fault.
+	 */
+	public void kill() {        
 
-                if (request.getViewID() == SVController.getCurrentViewId()) {
+		Thread t = new Thread() {
 
-                    if (null == request.getReqType()) {
-                        throw new RuntimeException("Should never reach here!");
-                    } else switch (request.getReqType()) {
-                        case ORDERED_REQUEST:
-                            noop = false;
-                            numRequests++;
-                            MessageContext msgCtx = new MessageContext(request.getSender(), request.getViewID(),
-                                    request.getReqType(), request.getSession(), request.getSequence(), request.getOperationId(),
-                                    request.getReplyServer(), request.serializedMessageSignature, firstRequest.timestamp,
-                                    request.numOfNonces, request.seed, regencies[consensusCount], leaders[consensusCount],
-                                    consId[consensusCount], cDecs[consensusCount].getConsMessages(), firstRequest, false);
-                            if (requestCount + 1 == requestsFromConsensus.length) {
-                                
-                                msgCtx.setLastInBatch();
-                            }   request.deliveryTime = System.nanoTime();
-                            if (executor instanceof BatchExecutable) {
-                                
-                               logger.debug("Batching request from " + request.getSender());
-                                
-                                // This is used to deliver the content decided by a consensus instance directly to
-                                // a Recoverable object. It is useful to allow the application to create a log and
-                                // store the proof associated with decisions (which are needed by replicas
-                                // that are asking for a state transfer).
-                                if (this.recoverer != null) this.recoverer.Op(msgCtx.getConsensusId(), request.getContent(), msgCtx);
-                                
-                                // deliver requests and contexts to the executor later
-                                msgCtxts.add(msgCtx);
-                                toBatch.add(request);
-                            } else if (executor instanceof SingleExecutable) {
-                                
-                                logger.debug("Delivering request from " + request.getSender() + " via SingleExecutable");
-                                
-                                // This is used to deliver the content decided by a consensus instance directly to
-                                // a Recoverable object. It is useful to allow the application to create a log and
-                                // store the proof associated with decisions (which are needed by replicas
-                                // that are asking for a state transfer).
-                                if (this.recoverer != null) this.recoverer.Op(msgCtx.getConsensusId(), request.getContent(), msgCtx);
-                                
-                                // This is used to deliver the requests to the application and obtain a reply to deliver
-                                //to the clients. The raw decision is passed to the application in the line above.
-                                TOMMessage response = ((SingleExecutable) executor).executeOrdered(id, SVController.getCurrentViewId(), request.getContent(), msgCtx);
-                                
-                                if (response != null) {
-                                    
-                                    logger.debug("sending reply to " + response.getSender());
-                                    replier.manageReply(response, msgCtx);
-                                }
-                            } else { //this code should never be executed
-                                throw new UnsupportedOperationException("Non-existent interface");
-                            }   break;
-                        case RECONFIG:
-                            SVController.enqueueUpdate(request);
-                            break;
-                        default: //this code should never be executed
-                            throw new RuntimeException("Should never reach here!");
-                    }
-                } else if (request.getViewID() < SVController.getCurrentViewId()) { 
-                    // message sender had an old view, resend the message to
-                    // him (but only if it came from consensus an not state transfer)
-                    
-                    tomLayer.getCommunication().send(new int[]{request.getSender()}, new TOMMessage(SVController.getStaticConf().getProcessId(),
-                            request.getSession(), request.getSequence(), request.getOperationId(), TOMUtil.getBytes(SVController.getCurrentView()), SVController.getCurrentViewId(), request.getReqType()));
-                }
-                requestCount++;
-            }
+			@Override
+			public void run() {
+				if (tomLayer != null) {   
+					tomLayer.shutdown();
+				}     
+			}
+		};
+		t.start();
+	}
 
-            // This happens when a consensus finishes but there are no requests to deliver
-            // to the application. This can happen if a reconfiguration is issued and is the only
-            // operation contained in the batch. The recoverer must be notified about this,
-            // hence the invocation of "noop"
-            if (noop && this.recoverer != null) {
-                
-                logger.debug("Delivering a no-op to the recoverer");
+	/**
+	 * Cleans the object state and reboots execution. From the perspective of the rest of the system,
+	 * this is equivalent to a rash followed by a recovery.
+	 */
+	public void restart() {        
+		Thread t = new Thread() {
 
-                logger.info("A consensus instance finished, but there were no commands to deliver to the application.");
-                logger.info("Notifying recoverable about a blank consensus.");
+			@Override
+			public void run() {
+				if (tomLayer != null && cs != null) {   
+					tomLayer.shutdown();
 
-                byte[][] batch = null;
-                MessageContext[] msgCtx = null;
-                if (requestsFromConsensus.length > 0) {
-                    //Make new batch to deliver
-                    batch = new byte[requestsFromConsensus.length][];
-                    msgCtx = new MessageContext[requestsFromConsensus.length];
+					try {
+						cs.join();
+						cs.getServersConn().join();
+						tomLayer.join();
+						tomLayer.getDeliveryThread().join();
 
-                    //Put messages in the batch
-                    int line = 0;
-                    for (TOMMessage m : requestsFromConsensus) {
-                        batch[line] = m.getContent();
+					} catch (InterruptedException ex) {
+						logger.error("Interruption while joining threads", ex);
+					}
 
-                        msgCtx[line] = new MessageContext(m.getSender(), m.getViewID(),
-                            m.getReqType(), m.getSession(), m.getSequence(), m.getOperationId(),
-                            m.getReplyServer(), m.serializedMessageSignature, firstRequest.timestamp,
-                            m.numOfNonces, m.seed, regencies[consensusCount], leaders[consensusCount],
-                            consId[consensusCount], cDecs[consensusCount].getConsMessages(), firstRequest, true);
-                        msgCtx[line].setLastInBatch();
-                        
-                        line++;
-                    }
-                }
+					tomStackCreated = false;
+					tomLayer = null;
+					cs = null;
 
-                this.recoverer.noOp(consId[consensusCount], batch, msgCtx);
-                
-                //MessageContext msgCtx = new MessageContext(-1, -1, null, -1, -1, -1, -1, null, // Since it is a noop, there is no need to pass info about the client...
-                //        -1, 0, 0, regencies[consensusCount], leaders[consensusCount], consId[consensusCount], cDecs[consensusCount].getConsMessages(), //... but there is still need to pass info about the consensus
-                //        null, true); // there is no command that is the first of the batch, since it is a noop
-                //msgCtx.setLastInBatch();
-                
-                //this.recoverer.noOp(msgCtx.getConsensusId(), msgCtx);
-            }
-            
-            consensusCount++;
-        }
+					init();
+					recoverer.setReplicaContext(replicaCtx);
+					replier.setReplicaContext(replicaCtx);
 
-        if (executor instanceof BatchExecutable && numRequests > 0) {
-            //Make new batch to deliver
-            byte[][] batch = new byte[numRequests][];
+				}     
+			}
+		};
+		t.start();
+	}
 
-            //Put messages in the batch
-            int line = 0;
-            for (TOMMessage m : toBatch) {
-                batch[line] = m.getContent();
-                line++;
-            }
+	public void receiveMessages(int consId[], int regencies[], int leaders[], CertifiedDecision[] cDecs, TOMMessage[][] requests) {
+		int numRequests = 0;
+		int consensusCount = 0;
+		List<TOMMessage> toBatch = new ArrayList<>();
+		List<MessageContext> msgCtxts = new ArrayList<>();
+		boolean noop = true;
 
-            MessageContext[] msgContexts = new MessageContext[msgCtxts.size()];
-            msgContexts = msgCtxts.toArray(msgContexts);
-            
-            //Deliver the batch and wait for replies
-            TOMMessage[] replies = ((BatchExecutable) executor).executeBatch(id, SVController.getCurrentViewId(), batch, msgContexts);
+		for (TOMMessage[] requestsFromConsensus : requests) {
 
-            //Send the replies back to the client
-            if (replies != null) {
-                
-                for (TOMMessage reply : replies) {
+			TOMMessage firstRequest = requestsFromConsensus[0];
+			int requestCount = 0;
+			noop = true;
+			for (TOMMessage request : requestsFromConsensus) {
 
-                    if (SVController.getStaticConf().getNumRepliers() > 0) {
-                        logger.debug("Sending reply to " + reply.getSender() + " with sequence number " + reply.getSequence() + " and operation ID " + reply.getOperationId() +" via ReplyManager");
-                        repMan.send(reply);
-                    } else {
-                        logger.debug("Sending reply to " + reply.getSender() + " with sequence number " + reply.getSequence() + " and operation ID " + reply.getOperationId());
-                        replier.manageReply(reply, null);
-                        //cs.send(new int[]{request.getSender()}, request.reply);
-                    }
-                }
-            }
-            //DEBUG
-            logger.debug("BATCHEXECUTOR END");
-        }
-    }
+				logger.debug("Processing TOMMessage from client " + request.getSender() + " with sequence number " + request.getSequence() + " for session " + request.getSession() + " decided in consensus " + consId[consensusCount]);
 
-    /**
-     * This method initializes the object
-     *
-     * @param cs Server side communication System
-     * @param conf Total order messaging configuration
-     */
-    private void initTOMLayer() {
-        if (tomStackCreated) { // if this object was already initialized, don't do it again
-            return;
-        }
+				if (request.getViewID() == SVController.getCurrentViewId()) {
 
-        if (!SVController.isInCurrentView()) {
-            throw new RuntimeException("I'm not an acceptor!");
-        }
+					if (null == request.getReqType()) {
+						throw new RuntimeException("Should never reach here!");
+					} else switch (request.getReqType()) {
+					case ORDERED_REQUEST:
+						noop = false;
+						numRequests++;
+						MessageContext msgCtx = new MessageContext(request.getSender(), request.getViewID(),
+								request.getReqType(), request.getSession(), request.getSequence(), request.getOperationId(),
+								request.getReplyServer(), request.serializedMessageSignature, firstRequest.timestamp,
+								request.numOfNonces, request.seed, regencies[consensusCount], leaders[consensusCount],
+								consId[consensusCount], cDecs[consensusCount].getConsMessages(), firstRequest, false);
+						if (requestCount + 1 == requestsFromConsensus.length) {
 
-        // Assemble the total order messaging layer
-        MessageFactory messageFactory = new MessageFactory(id);
+							msgCtx.setLastInBatch();
+						}   request.deliveryTime = System.nanoTime();
+						if (executor instanceof BatchExecutable) {
 
-        Acceptor acceptor = new Acceptor(cs, messageFactory, SVController);
-        cs.setAcceptor(acceptor);
+							logger.debug("Batching request from " + request.getSender());
 
-        Proposer proposer = new Proposer(cs, messageFactory, SVController);
+							// This is used to deliver the content decided by a consensus instance directly to
+							// a Recoverable object. It is useful to allow the application to create a log and
+							// store the proof associated with decisions (which are needed by replicas
+							// that are asking for a state transfer).
+							if (this.recoverer != null) this.recoverer.Op(msgCtx.getConsensusId(), request.getContent(), msgCtx);
 
-        ExecutionManager executionManager = new ExecutionManager(SVController, acceptor, proposer, id);
+							// deliver requests and contexts to the executor later
+							msgCtxts.add(msgCtx);
+							toBatch.add(request);
+						} else if (executor instanceof SingleExecutable) {
 
-        acceptor.setExecutionManager(executionManager);
+							logger.debug("Delivering request from " + request.getSender() + " via SingleExecutable");
 
-        tomLayer = new TOMLayer(executionManager, this, recoverer, acceptor, cs, SVController, verifier);
+							// This is used to deliver the content decided by a consensus instance directly to
+							// a Recoverable object. It is useful to allow the application to create a log and
+							// store the proof associated with decisions (which are needed by replicas
+							// that are asking for a state transfer).
+							if (this.recoverer != null) this.recoverer.Op(msgCtx.getConsensusId(), request.getContent(), msgCtx);
 
-        executionManager.setTOMLayer(tomLayer);
+							// This is used to deliver the requests to the application and obtain a reply to deliver
+							//to the clients. The raw decision is passed to the application in the line above.
+							TOMMessage response = ((SingleExecutable) executor).executeOrdered(id, SVController.getCurrentViewId(), request.getContent(), msgCtx);
 
-        SVController.setTomLayer(tomLayer);
+							if (response != null) {
 
-        cs.setTOMLayer(tomLayer);
-        cs.setRequestReceiver(tomLayer);
+								logger.debug("sending reply to " + response.getSender());
+								replier.manageReply(response, msgCtx);
+							}
+						} else { //this code should never be executed
+							throw new UnsupportedOperationException("Non-existent interface");
+						}   break;
+					case RECONFIG:
+						SVController.enqueueUpdate(request);
+						break;
+					default: //this code should never be executed
+						throw new RuntimeException("Should never reach here!");
+					}
+				} else if (request.getViewID() < SVController.getCurrentViewId()) { 
+					// message sender had an old view, resend the message to
+					// him (but only if it came from consensus an not state transfer)
 
-        acceptor.setTOMLayer(tomLayer);
+					tomLayer.getCommunication().send(new int[]{request.getSender()}, new TOMMessage(SVController.getStaticConf().getProcessId(),
+							request.getSession(), request.getSequence(), request.getOperationId(), TOMUtil.getBytes(SVController.getCurrentView()), SVController.getCurrentViewId(), request.getReqType()));
+				}
+				requestCount++;
+			}
 
-        if (SVController.getStaticConf().isShutdownHookEnabled()) {
-            Runtime.getRuntime().addShutdownHook(new ShutdownHookThread(tomLayer));
-        }
-        replicaCtx = new ReplicaContext(cs, SVController);
+			// This happens when a consensus finishes but there are no requests to deliver
+			// to the application. This can happen if a reconfiguration is issued and is the only
+			// operation contained in the batch. The recoverer must be notified about this,
+			// hence the invocation of "noop"
+			if (noop && this.recoverer != null) {
 
-        tomLayer.start(); // start the layer execution
-        tomStackCreated = true;
-        
-        this.logger.info("Started TOM Layer.");
-    }
+				logger.debug("Delivering a no-op to the recoverer");
 
-    /**
-     * Obtains the current replica context (getting access to several
-     * information and capabilities of the replication engine).
-     *
-     * @return this replica context
-     */
-    public final ReplicaContext getReplicaContext() {
-        return replicaCtx;
-    }
-    
-    
-    /**
-     * Obtains the current replica communication system.
-     * 
-     * @return The replica's communication system
-     */
-    public ServerCommunicationSystem getServerCommunicationSystem() {
-        
-        return cs;
-    }
+				logger.info("A consensus instance finished, but there were no commands to deliver to the application.");
+				logger.info("Notifying recoverable about a blank consensus.");
 
-    /**
-     * Replica ID
-     * @return Replica ID
-     */
-    public int getId() {
-        return id;
-    }
+				byte[][] batch = null;
+				MessageContext[] msgCtx = null;
+				if (requestsFromConsensus.length > 0) {
+					//Make new batch to deliver
+					batch = new byte[requestsFromConsensus.length][];
+					msgCtx = new MessageContext[requestsFromConsensus.length];
 
-    /**
-     * returns SGXFunctions link in order to be able to call Enclave functions further on.
-     * @return
-     */
+					//Put messages in the batch
+					int line = 0;
+					for (TOMMessage m : requestsFromConsensus) {
+						batch[line] = m.getContent();
+
+						msgCtx[line] = new MessageContext(m.getSender(), m.getViewID(),
+								m.getReqType(), m.getSession(), m.getSequence(), m.getOperationId(),
+								m.getReplyServer(), m.serializedMessageSignature, firstRequest.timestamp,
+								m.numOfNonces, m.seed, regencies[consensusCount], leaders[consensusCount],
+								consId[consensusCount], cDecs[consensusCount].getConsMessages(), firstRequest, true);
+						msgCtx[line].setLastInBatch();
+
+						line++;
+					}
+				}
+
+				this.recoverer.noOp(consId[consensusCount], batch, msgCtx);
+
+				//MessageContext msgCtx = new MessageContext(-1, -1, null, -1, -1, -1, -1, null, // Since it is a noop, there is no need to pass info about the client...
+				//        -1, 0, 0, regencies[consensusCount], leaders[consensusCount], consId[consensusCount], cDecs[consensusCount].getConsMessages(), //... but there is still need to pass info about the consensus
+				//        null, true); // there is no command that is the first of the batch, since it is a noop
+				//msgCtx.setLastInBatch();
+
+				//this.recoverer.noOp(msgCtx.getConsensusId(), msgCtx);
+			}
+
+			consensusCount++;
+		}
+
+		if (executor instanceof BatchExecutable && numRequests > 0) {
+			//Make new batch to deliver
+			byte[][] batch = new byte[numRequests][];
+
+			//Put messages in the batch
+			int line = 0;
+			for (TOMMessage m : toBatch) {
+				batch[line] = m.getContent();
+				line++;
+			}
+
+			MessageContext[] msgContexts = new MessageContext[msgCtxts.size()];
+			msgContexts = msgCtxts.toArray(msgContexts);
+
+			//Deliver the batch and wait for replies
+			TOMMessage[] replies = ((BatchExecutable) executor).executeBatch(id, SVController.getCurrentViewId(), batch, msgContexts);
+
+			//Send the replies back to the client
+			if (replies != null) {
+
+				for (TOMMessage reply : replies) {
+
+					if (SVController.getStaticConf().getNumRepliers() > 0) {
+						logger.debug("Sending reply to " + reply.getSender() + " with sequence number " + reply.getSequence() + " and operation ID " + reply.getOperationId() +" via ReplyManager");
+						repMan.send(reply);
+					} else {
+						logger.debug("Sending reply to " + reply.getSender() + " with sequence number " + reply.getSequence() + " and operation ID " + reply.getOperationId());
+						replier.manageReply(reply, null);
+						//cs.send(new int[]{request.getSender()}, request.reply);
+					}
+				}
+			}
+			//DEBUG
+			logger.debug("BATCHEXECUTOR END");
+		}
+	}
+
+	/**
+	 * This method initializes the object
+	 *
+	 * @param cs Server side communication System
+	 * @param conf Total order messaging configuration
+	 */
+	private void initTOMLayer() {
+		if (tomStackCreated) { // if this object was already initialized, don't do it again
+			return;
+		}
+
+		if (!SVController.isInCurrentView()) {
+			throw new RuntimeException("I'm not an acceptor!");
+		}
+
+		// Assemble the total order messaging layer
+		MessageFactory messageFactory = new MessageFactory(id);
+
+		Acceptor acceptor = new Acceptor(cs, messageFactory, SVController);
+		cs.setAcceptor(acceptor);
+
+		Proposer proposer = new Proposer(cs, messageFactory, SVController);
+
+		ExecutionManager executionManager = new ExecutionManager(SVController, acceptor, proposer, id);
+
+		acceptor.setExecutionManager(executionManager);
+
+		tomLayer = new TOMLayer(executionManager, this, recoverer, acceptor, cs, SVController, verifier);
+
+		executionManager.setTOMLayer(tomLayer);
+
+		SVController.setTomLayer(tomLayer);
+
+		cs.setTOMLayer(tomLayer);
+		cs.setRequestReceiver(tomLayer);
+
+		acceptor.setTOMLayer(tomLayer);
+
+		if (SVController.getStaticConf().isShutdownHookEnabled()) {
+			Runtime.getRuntime().addShutdownHook(new ShutdownHookThread(tomLayer));
+		}
+		replicaCtx = new ReplicaContext(cs, SVController);
+
+		tomLayer.start(); // start the layer execution
+		tomStackCreated = true;
+
+		this.logger.info("Started TOM Layer.");
+	}
+
+	/**
+	 * Obtains the current replica context (getting access to several
+	 * information and capabilities of the replication engine).
+	 *
+	 * @return this replica context
+	 */
+	public final ReplicaContext getReplicaContext() {
+		return replicaCtx;
+	}
+
+
+	/**
+	 * Obtains the current replica communication system.
+	 * 
+	 * @return The replica's communication system
+	 */
+	public ServerCommunicationSystem getServerCommunicationSystem() {
+
+		return cs;
+	}
+
+	/**
+	 * Replica ID
+	 * @return Replica ID
+	 */
+	public int getId() {
+		return id;
+	}
+
+	/**
+	 * returns SGXFunctions link in order to be able to call Enclave functions further on.
+	 * @return
+	 */
 	public SgxFunctions getEnclave() {
 		return this.enclave;		
 	}

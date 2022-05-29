@@ -33,6 +33,7 @@ import java.security.Security;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.security.spec.InvalidKeySpecException;
+import java.util.Arrays;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
@@ -606,6 +607,9 @@ public class ServerConnection {
 				public void handshakeCompleted(HandshakeCompletedEvent event) {
 					logger.info("SSL/TLS handshake complete!, Id:{}" + "  ## CipherSuite: {}.", remoteId,
 							event.getCipherSuite());
+//					if(dhParameters != null) {
+////						logger.info("NOT NULL" + Arrays.toString(dhParameters));
+//					}
 //					if(dhParameters != null) { //If SGX is activated.
 //						try {
 //							DataOutputStream out = new DataOutputStream(event.getSocket().getOutputStream());

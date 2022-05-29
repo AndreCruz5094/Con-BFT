@@ -92,7 +92,9 @@ public class SgxFunctions {
 	public void createSignedEnclave(String dir,String pemFilePath, int enclaveID) {
 		
 		String shPath = dir + "/SignEnclaveAux.sh"; //Get the correct Script.
+		System.out.println(shPath);
 		String[] cmd = {"sh", shPath,Integer.toString(enclaveID),pemFilePath};
+		System.out.println(Arrays.toString(cmd));
 		try {
 			Process p = Runtime.getRuntime().exec(cmd);
 			BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
@@ -113,10 +115,10 @@ public class SgxFunctions {
 	/**
 	 * JNI call in order to initialize the Intel SGX Enclave.
 	 * @param enclaveId - globalId for the enclave;
-	 * @param enclaveFilePath -  path of the Enclave File path;
+	 * @param enclaveFilePath -  Enclave File path in a byte array with the UTF-8 Format.
 	 * @return an Integer to indicate success, with anything below 0 indicating error.
 	 */
-	public native int jni_initialize_enclave(int enclaveId, String enclaveFilePath);
+	public native int jni_initialize_enclave(int enclaveId, byte[] enclaveFilePath);
 
 
 	//Destroy the enclave.
