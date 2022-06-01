@@ -136,6 +136,7 @@ distributions {
                 from 'lib/Enclave.config.xml'
             }
             from 'runscripts/smartrun.sh'
+            from 'runscripts/smartrun_jni_debug.sh'
             from 'runscripts/smartrun.cmd'
             from 'runscripts/valgrind_smartrun.sh'
             from 'lib/SignEnclaveAux.sh'

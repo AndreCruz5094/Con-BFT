@@ -33,7 +33,6 @@ import java.security.Security;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.security.spec.InvalidKeySpecException;
-import java.util.Arrays;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
@@ -58,7 +57,6 @@ import bftsmart.reconfiguration.ServerViewController;
 import bftsmart.reconfiguration.VMMessage;
 import bftsmart.tom.ServiceReplica;
 import bftsmart.tom.util.TOMUtil;
-import sgxUtils.SgxFunctions;
 
 /**
  * This class represents a connection with other server.
@@ -182,6 +180,23 @@ public class ServerConnection {
 				socketInStream = new DataInputStream(this.socket.getInputStream());
 			} catch (IOException ex) {
 				logger.error("Error creating connection to " + remoteId, ex);
+			}
+		}
+		
+		this.useSenderThread = this.controller.getStaticConf().isUseSenderThread();
+
+		if (useSenderThread && (this.controller.getStaticConf().getTTPId() != remoteId)) {
+			new SenderThread().start();
+		} else {
+			sendLock = new ReentrantLock();
+		}
+
+		if (!this.controller.getStaticConf().isTheTTP()) {
+			if (this.controller.getStaticConf().getTTPId() == remoteId) {
+				//Uma thread "diferente" para as msgs recebidas da TTP
+				new TTPReceiverThread(replica).start();
+			} else {
+				new ReceiverThread().start();
 			}
 		}
 
@@ -607,9 +622,21 @@ public class ServerConnection {
 				public void handshakeCompleted(HandshakeCompletedEvent event) {
 					logger.info("SSL/TLS handshake complete!, Id:{}" + "  ## CipherSuite: {}.", remoteId,
 							event.getCipherSuite());
-//					if(dhParameters != null) {
-////						logger.info("NOT NULL" + Arrays.toString(dhParameters));
-//					}
+					if(dhParameters == null)
+						logger.info("Replica without SGX Enabled.");
+					
+					if(dhParameters != null) { //Verify if SGX is activated:
+						try {
+							DataOutputStream out = new DataOutputStream(event.getSocket().getOutputStream());
+							logger.info("Sending test integer.");
+							out.write(10);
+						} catch (IOException e) {
+							logger.error("Error with Socket OutputStream.");
+						}
+						
+					}
+
+					
 //					if(dhParameters != null) { //If SGX is activated.
 //						try {
 //							DataOutputStream out = new DataOutputStream(event.getSocket().getOutputStream());

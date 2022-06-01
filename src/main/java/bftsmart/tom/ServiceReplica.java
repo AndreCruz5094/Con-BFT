@@ -208,18 +208,20 @@ public class ServiceReplica {
 				this.logger.info("Enclave file exists. Starting enclave.");
 			
 			logger.info("ABSOLUTE PATH: " + enclaveFile.getAbsolutePath());
-			byte[] enclaveFilePath = enclaveFile.getAbsolutePath().substring(0).getBytes(StandardCharsets.UTF_8);
+			byte[] enclaveFilePath = enclaveFile.getAbsolutePath().getBytes(StandardCharsets.UTF_8);
 			byte[] correctPath = Arrays.copyOf(enclaveFilePath, enclaveFilePath.length+1);
 			correctPath[correctPath.length-1] = '\0';
-			int created = enclave.jni_initialize_enclave(enclaveId,enclaveFilePath);
+			logger.info("CORRECT PATH LEN: " + correctPath.length);
+			int created = enclave.jni_initialize_enclave(enclaveId,correctPath);
 			if(created == 0)
 				this.logger.info("Enclave created.");
 			else
 				this.logger.info("Enclave failed to create.");
 //
 //			//Create DH parameters:
-//			this.dh_params = this.enclave.jni_sgx_begin_ec_dh(); //Begin the Enclave EC parameters for DH key exchange.
-//			this.logger.info("EC-DH Parameters created for Key exchange.");
+			this.dh_params = this.enclave.jni_sgx_begin_ec_dh(); //Begin the Enclave EC parameters for DH key exchange.
+			this.logger.info("EC Parameters: " + Arrays.toString(dh_params));
+			this.logger.info("EC-DH Parameters created for Key exchange.");
 		} catch (Exception e) {
 			e.printStackTrace();
 		}

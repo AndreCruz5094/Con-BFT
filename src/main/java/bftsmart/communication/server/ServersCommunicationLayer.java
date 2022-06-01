@@ -204,6 +204,7 @@ public class ServersCommunicationLayer extends Thread {
 	//SGX-Enabled communication Layer:
 	public ServersCommunicationLayer(ServerViewController controller, LinkedBlockingQueue<SystemMessage> inQueue, ServiceReplica replica,byte[] parameters) throws Exception{
 		this.logger.info("Starting SGX-Enabled CommunicationLayer");
+		this.dh_parameters = parameters;
 		this.sharedKeys = new HashMap<>();
 		this.controller = controller;
 		this.inQueue = inQueue;
@@ -339,8 +340,11 @@ public class ServersCommunicationLayer extends Thread {
 		connectionsLock.lock();
 		ServerConnection ret = this.connections.get(remoteId);
 		if (ret == null) {
-			ret = new ServerConnection(controller, null, 
-					remoteId, this.inQueue, this.replica);
+			if(this.dh_parameters == null)
+				ret = new ServerConnection(controller, null,remoteId, this.inQueue, this.replica);
+			else
+				ret = new ServerConnection(controller,null,remoteId,this.inQueue,this.replica,this.dh_parameters);
+
 			this.connections.put(remoteId, ret);
 		}
 		connectionsLock.unlock();
@@ -431,7 +435,11 @@ public class ServersCommunicationLayer extends Thread {
 				int remoteId = new DataInputStream(newSocket.getInputStream()).readInt();
 				this.logger.info("SSL Socket ACCEPTED from ID: " + remoteId);
 
-				//				if(this.sharedKeys != null) { //Meaning SGX is enabled, this is only called with SGX parameters.
+				if(this.sharedKeys != null) { //Meaning SGX is enabled, this is only called with SGX parameters.
+					this.logger.info("Shared keys is not null");
+					DataInputStream in = new DataInputStream(newSocket.getInputStream());
+					this.logger.info(Integer.toString(in.read()));
+				}
 				//					
 				//					DataInputStream in = new DataInputStream(newSocket.getInputStream());
 				//					DataOutputStream out = new DataOutputStream(newSocket.getOutputStream());
@@ -495,8 +503,11 @@ public class ServersCommunicationLayer extends Thread {
 			if (this.connections.get(remoteId) == null) { //This must never happen!!!
 				//first time that this connection is being established
 				//System.out.println("THIS DOES NOT HAPPEN....."+remoteId);
-				this.connections.put(remoteId,
-						new ServerConnection(controller, newSocket, remoteId, inQueue, replica));
+				if(this.dh_parameters == null)
+					this.connections.put(remoteId,
+							new ServerConnection(controller, newSocket, remoteId, inQueue, replica));
+				else 
+					this.connections.put(remoteId, new ServerConnection(controller,newSocket,remoteId,inQueue,replica,dh_parameters));
 			} else {
 				//reconnection	
 				logger.debug("ReConnecting with replica: {}", remoteId);
