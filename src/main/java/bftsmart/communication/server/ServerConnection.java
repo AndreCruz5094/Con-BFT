@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
@@ -35,6 +36,7 @@ import java.security.cert.CertificateException;
 import java.security.spec.InvalidKeySpecException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.Arrays;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -48,7 +50,6 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,6 +58,7 @@ import bftsmart.reconfiguration.ServerViewController;
 import bftsmart.reconfiguration.VMMessage;
 import bftsmart.tom.ServiceReplica;
 import bftsmart.tom.util.TOMUtil;
+import sgxUtils.SgxFunctions;
 
 /**
  * This class represents a connection with other server.
@@ -628,41 +630,41 @@ public class ServerConnection {
 					if(dhParameters != null) { //Verify if SGX is activated:
 						try {
 							DataOutputStream out = new DataOutputStream(event.getSocket().getOutputStream());
-							logger.info("Sending test integer.");
-							out.write(10);
+							logger.info("Writing length of DH parameters");
+							out.write(dhParameters.length);
+							logger.info("Writing DH Parameters");
+							out.write(dhParameters);
+							
+							
+							logger.info("Reading length of DH parameters");
+							DataInputStream in = new DataInputStream(event.getSocket().getInputStream());
+							byte[] otherDH = new byte[in.read()];
+							if(otherDH.length != 32) {
+								otherDH = Arrays.copyOf(otherDH,32);
+							}
+							logger.info("Reading DH parameters");
+							in.read(otherDH);
+							
+							logger.info("Calculating Shared DH key with Replica " + remoteId);
+							SgxFunctions enclave = serviceRep.getEnclave();
+							sharedDhKey = enclave.jni_calculate_shared_dh(otherDH); //Calculate the Shared key.
+							logger.info("Shared DH calculated with Replica " + remoteId);
+							//Encrypt information:
+							byte[] info = "Hello".getBytes(StandardCharsets.UTF_8);
+							System.out.println( Arrays.toString(info));
+							byte[] enc = enclave.jni_sgx_aes_dh_encrypt(sharedDhKey, info);
+							System.out.println("Encrypted Bytes :" + Arrays.toString(enc));
+							byte[] dec = enclave.jni_sgx_aes_dh_decrypt(sharedDhKey, enc, -1);
+							out.write(enc.length);
+							out.write(enc);
+							logger.info(new String(dec,StandardCharsets.UTF_8));
+							
+							
 						} catch (IOException e) {
 							logger.error("Error with Socket OutputStream.");
 						}
 						
 					}
-
-					
-//					if(dhParameters != null) { //If SGX is activated.
-//						try {
-//							DataOutputStream out = new DataOutputStream(event.getSocket().getOutputStream());
-//							DataInputStream in = new DataInputStream(event.getSocket().getInputStream());
-//
-//							//Send dhInformation:
-//							out.write(dhParameters.length);
-//							logger.info("Sent byte[] length");
-//							out.write(dhParameters, 0, dhParameters.length);
-//							logger.info("Sent DH parameters");
-//
-//							//Wait response:
-//							byte[] otherParams = new byte[in.read()];
-//							in.read(otherParams, 0, otherParams.length);
-//							logger.info("Read length of parameters and byte[]");
-//
-//							//Get Enclave and create DH key.
-//							SgxFunctions enclave = serviceRep.getEnclave();
-//							sharedDhKey = enclave.jni_calculate_shared_dh(otherParams);
-//							logger.info("Calculated DH shared key");
-//
-//
-//						} catch (IOException e) {
-//							logger.error("Error opening OutputStream after Handshake.");
-//						}
-//					}
 
 				}
 			});

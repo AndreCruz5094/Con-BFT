@@ -26,6 +26,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.security.Security;
@@ -438,7 +439,25 @@ public class ServersCommunicationLayer extends Thread {
 				if(this.sharedKeys != null) { //Meaning SGX is enabled, this is only called with SGX parameters.
 					this.logger.info("Shared keys is not null");
 					DataInputStream in = new DataInputStream(newSocket.getInputStream());
-					this.logger.info(Integer.toString(in.read()));
+					byte[] otherDh = new byte[in.read()];
+					this.logger.info("Read byte[] length");
+					in.read(otherDh);
+					this.logger.info("Read DH Parameters from " + remoteId);
+					
+					byte[] SharedDH = this.replica.getEnclave().jni_calculate_shared_dh(otherDh);
+					
+					DataOutputStream out = new DataOutputStream(newSocket.getOutputStream());
+					System.out.println("DHPARAM SIZE: " + this.dh_parameters.length);
+					out.write(this.dh_parameters.length);
+					this.logger.info("Sent byte[] length");
+					out.write(this.dh_parameters);
+					this.logger.info("Sent DH parameters to " + remoteId);
+					byte[] enc = new byte[in.read()];
+					in.read(enc);
+					System.out.println("Received Encrypted : " + Arrays.toString(enc));
+					byte[] dec = this.replica.getEnclave().jni_sgx_aes_dh_decrypt(SharedDH, enc, -1);
+					String result = new String(dec,StandardCharsets.UTF_8);
+					System.out.println(result);
 				}
 				//					
 				//					DataInputStream in = new DataInputStream(newSocket.getInputStream());
