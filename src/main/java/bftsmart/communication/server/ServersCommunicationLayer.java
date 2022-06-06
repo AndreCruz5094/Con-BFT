@@ -439,9 +439,9 @@ public class ServersCommunicationLayer extends Thread {
 				if(this.sharedKeys != null) { //Meaning SGX is enabled, this is only called with SGX parameters.
 					this.logger.info("Shared keys is not null");
 					DataInputStream in = new DataInputStream(newSocket.getInputStream());
-					byte[] otherDh = new byte[in.read()];
+					byte[] otherDh = new byte[in.readInt()];
 					this.logger.info("Read byte[] length");
-					in.read(otherDh);
+					in.readFully(otherDh);
 					this.logger.info("Read DH Parameters from " + remoteId);
 					
 					byte[] SharedDH = this.replica.getEnclave().jni_calculate_shared_dh(otherDh);
@@ -453,37 +453,13 @@ public class ServersCommunicationLayer extends Thread {
 					out.write(this.dh_parameters);
 					this.logger.info("Sent DH parameters to " + remoteId);
 					byte[] enc = new byte[in.read()];
-					in.read(enc);
+					in.readFully(enc);
 					System.out.println("Received Encrypted : " + Arrays.toString(enc));
 					byte[] dec = this.replica.getEnclave().jni_sgx_aes_dh_decrypt(SharedDH, enc, -1);
 					String result = new String(dec,StandardCharsets.UTF_8);
 					System.out.println(result);
 				}
-				//					
-				//					DataInputStream in = new DataInputStream(newSocket.getInputStream());
-				//					DataOutputStream out = new DataOutputStream(newSocket.getOutputStream());
-				//
-				//					//Read first:
-				//					this.logger.info("Reading DH parameters from " + remoteId);
-				//					byte[] otherDh = new byte[in.read()];
-				//					in.read(otherDh, 0, otherDh.length);
-				//
-				//					//Now send ours back:
-				//					this.logger.info("Sending DH parameters now to replica " + remoteId);
-				//					out.write(this.dh_parameters.length);
-				//					out.write(this.dh_parameters,0,this.dh_parameters.length);
-				//					this.logger.info("Sent parameters.");
-				//
-				//					byte[] dhSharedKey = replica.getEnclave().jni_calculate_shared_dh(otherDh);
-				//					if(dhSharedKey != null) {
-				//						this.sharedKeys.put(remoteId, dhSharedKey);
-				//						this.logger.info("Shared Key with replica" + remoteId + " calculated and stored.");
-				//					}
-				//					else
-				//						this.logger.error("Error: Dh not calculated.");
-				//				}
-
-
+				
 
 				//******* EDUARDO BEGIN **************//
 				if (!this.controller.isInCurrentView() &&

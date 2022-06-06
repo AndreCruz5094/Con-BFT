@@ -173,10 +173,8 @@ public class ServerConnection {
 			ssltlsCreateConnection();
 		}
 
-		System.out.println("SOCKET: " + this.socket == null);
 
 		if (this.socket != null) {
-			System.out.println("Socket not Null..");
 			try {
 				socketOutStream = new DataOutputStream(this.socket.getOutputStream());
 				socketInStream = new DataInputStream(this.socket.getInputStream());
@@ -631,7 +629,7 @@ public class ServerConnection {
 						try {
 							DataOutputStream out = new DataOutputStream(event.getSocket().getOutputStream());
 							logger.info("Writing length of DH parameters");
-							out.write(dhParameters.length);
+							out.writeInt(dhParameters.length);
 							logger.info("Writing DH Parameters");
 							out.write(dhParameters);
 							
@@ -643,7 +641,7 @@ public class ServerConnection {
 								otherDH = Arrays.copyOf(otherDH,32);
 							}
 							logger.info("Reading DH parameters");
-							in.read(otherDH);
+							in.readFully(otherDH);
 							
 							logger.info("Calculating Shared DH key with Replica " + remoteId);
 							SgxFunctions enclave = serviceRep.getEnclave();
@@ -657,6 +655,7 @@ public class ServerConnection {
 							byte[] dec = enclave.jni_sgx_aes_dh_decrypt(sharedDhKey, enc, -1);
 							out.write(enc.length);
 							out.write(enc);
+							out.flush();
 							logger.info(new String(dec,StandardCharsets.UTF_8));
 							
 							
