@@ -440,19 +440,21 @@ public class ServersCommunicationLayer extends Thread {
 					this.logger.info("Shared keys is not null");
 					DataInputStream in = new DataInputStream(newSocket.getInputStream());
 					byte[] otherDh = new byte[in.readInt()];
+					this.logger.info("OTHER DH Has length : " + otherDh.length);
 					this.logger.info("Read byte[] length");
 					in.readFully(otherDh);
 					this.logger.info("Read DH Parameters from " + remoteId);
+					this.logger.info("OTHER DH: " + Arrays.toString(otherDh));
 					
 					byte[] SharedDH = this.replica.getEnclave().jni_calculate_shared_dh(otherDh);
 					
 					DataOutputStream out = new DataOutputStream(newSocket.getOutputStream());
 					System.out.println("DHPARAM SIZE: " + this.dh_parameters.length);
-					out.write(this.dh_parameters.length);
+					out.writeInt(this.dh_parameters.length);
 					this.logger.info("Sent byte[] length");
 					out.write(this.dh_parameters);
 					this.logger.info("Sent DH parameters to " + remoteId);
-					byte[] enc = new byte[in.read()];
+					byte[] enc = new byte[in.readInt()];
 					in.readFully(enc);
 					System.out.println("Received Encrypted : " + Arrays.toString(enc));
 					byte[] dec = this.replica.getEnclave().jni_sgx_aes_dh_decrypt(SharedDH, enc, -1);

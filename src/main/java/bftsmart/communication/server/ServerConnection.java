@@ -85,7 +85,7 @@ public class ServerConnection {
 	private Lock connectLock = new ReentrantLock();
 	/** Only used when there is no sender Thread */
 	private Lock sendLock;
-	private boolean doWork = true;
+	private boolean doWork = false;
 
 	private SecretKey secretKey = null;
 
@@ -446,7 +446,6 @@ public class ServerConnection {
 
 		@Override
 		public void run() {
-
 			while (doWork) {
 				if (socket != null && socketInStream != null) {
 
@@ -631,12 +630,12 @@ public class ServerConnection {
 							logger.info("Writing length of DH parameters");
 							out.writeInt(dhParameters.length);
 							logger.info("Writing DH Parameters");
-							out.write(dhParameters);
+							out.write(dhParameters,0,dhParameters.length);
 							
 							
 							logger.info("Reading length of DH parameters");
 							DataInputStream in = new DataInputStream(event.getSocket().getInputStream());
-							byte[] otherDH = new byte[in.read()];
+							byte[] otherDH = new byte[in.readInt()];
 							if(otherDH.length != 32) {
 								otherDH = Arrays.copyOf(otherDH,32);
 							}
@@ -647,16 +646,18 @@ public class ServerConnection {
 							SgxFunctions enclave = serviceRep.getEnclave();
 							sharedDhKey = enclave.jni_calculate_shared_dh(otherDH); //Calculate the Shared key.
 							logger.info("Shared DH calculated with Replica " + remoteId);
+							logger.info("OTHER DH : " + Arrays.toString(otherDH));
 							//Encrypt information:
 							byte[] info = "Hello".getBytes(StandardCharsets.UTF_8);
 							System.out.println( Arrays.toString(info));
 							byte[] enc = enclave.jni_sgx_aes_dh_encrypt(sharedDhKey, info);
 							System.out.println("Encrypted Bytes :" + Arrays.toString(enc));
 							byte[] dec = enclave.jni_sgx_aes_dh_decrypt(sharedDhKey, enc, -1);
-							out.write(enc.length);
-							out.write(enc);
+							out.writeInt(enc.length);
+							out.write(enc,0,enc.length);
 							out.flush();
 							logger.info(new String(dec,StandardCharsets.UTF_8));
+							doWork = true;
 							
 							
 						} catch (IOException e) {
