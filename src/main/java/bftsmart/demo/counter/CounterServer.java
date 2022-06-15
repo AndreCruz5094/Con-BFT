@@ -15,7 +15,6 @@ limitations under the License.
  */
 package bftsmart.demo.counter;
 
-import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -26,15 +25,6 @@ import java.io.ObjectInput;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutput;
 import java.io.ObjectOutputStream;
-import java.io.PrintWriter;
-import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.PrivateKey;
-import java.security.spec.RSAKeyGenParameterSpec;
-import java.util.Arrays;
-import java.util.Base64;
 
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ServiceReplica;
@@ -64,7 +54,7 @@ public final class CounterServer extends DefaultSingleRecoverable  {
 			e.printStackTrace();
 		}
 
-		sgx.createSignedEnclave(System.getProperty("user.dir"), pem.getAbsolutePath(), 5);
+//		sgx.createSignedEnclave(System.getProperty("user.dir"), pem.getAbsolutePath(), 5);
 		System.out.println("Enclave Signed.");
 //		sgx.jni_initialize_enclave(20, enc_path);
 		System.out.println("Enclave created.");

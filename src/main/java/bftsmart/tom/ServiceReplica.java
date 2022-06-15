@@ -201,7 +201,7 @@ public class ServiceReplica {
 			}
 			File enclaveFile = new File(HOME_DIR + "/" + this.enclaveId + "enclave_signed.so");
 			if(!enclaveFile.exists()) {
-				enclave.createSignedEnclave(HOME_DIR, pemFile.getAbsolutePath(), enclaveId);
+				enclave.createSignedEnclave(HOME_DIR, pemFile.getAbsolutePath(), enclaveId, this.id);
 				this.logger.info("Enclave signed");
 			}
 			else
@@ -211,12 +211,14 @@ public class ServiceReplica {
 			byte[] enclaveFilePath = enclaveFile.getAbsolutePath().getBytes(StandardCharsets.UTF_8);
 			byte[] correctPath = Arrays.copyOf(enclaveFilePath, enclaveFilePath.length+1);
 			correctPath[correctPath.length-1] = '\0';
-			logger.info("CORRECT PATH LEN: " + correctPath.length);
+			System.out.println(enclaveFile.getAbsolutePath());
 			int created = enclave.jni_initialize_enclave(enclaveId,correctPath);
 			if(created == 0)
 				this.logger.info("Enclave created.");
-			else
+			else {
 				this.logger.info("Enclave failed to create.");
+				System.exit(-1);
+			}
 //
 //			//Create DH parameters:
 			this.dh_params = this.enclave.jni_sgx_begin_ec_dh(); //Begin the Enclave EC parameters for DH key exchange.

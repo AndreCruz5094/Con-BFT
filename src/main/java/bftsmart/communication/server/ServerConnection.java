@@ -83,9 +83,11 @@ public class ServerConnection {
 	private LinkedBlockingQueue<SystemMessage> inQueue;
 
 	private Lock connectLock = new ReentrantLock();
+	private Lock keySenderLock = new ReentrantLock();
+	private Lock keyReceiverLock = new ReentrantLock();
 	/** Only used when there is no sender Thread */
 	private Lock sendLock;
-	private boolean doWork = false;
+	private boolean doWork = true;
 
 	private SecretKey secretKey = null;
 
@@ -416,6 +418,7 @@ public class ServerConnection {
 
 		@Override
 		public void run() {
+			keySenderLock.lock();
 			byte[] data = null;
 
 			while (doWork) {
@@ -430,6 +433,7 @@ public class ServerConnection {
 					sendBytes(data);
 				}
 			}
+			keySenderLock.unlock();
 
 			logger.debug("Sender for " + remoteId + " stopped!");
 		}
@@ -446,6 +450,7 @@ public class ServerConnection {
 
 		@Override
 		public void run() {
+			keyReceiverLock.lock();
 			while (doWork) {
 				if (socket != null && socketInStream != null) {
 
@@ -490,6 +495,7 @@ public class ServerConnection {
 					waitAndConnect();
 				}
 			}
+			keyReceiverLock.unlock();
 		}
 	}
 
@@ -512,7 +518,7 @@ public class ServerConnection {
 
 		@Override
 		public void run() {
-
+				//Adicionar LOCK.
 			while (doWork) {
 				if (socket != null && socketInStream != null) {
 					try {
@@ -619,6 +625,8 @@ public class ServerConnection {
 			this.socket.addHandshakeCompletedListener(new HandshakeCompletedListener() {
 				@Override
 				public void handshakeCompleted(HandshakeCompletedEvent event) {
+					keySenderLock.lock();
+					keyReceiverLock.lock();
 					logger.info("SSL/TLS handshake complete!, Id:{}" + "  ## CipherSuite: {}.", remoteId,
 							event.getCipherSuite());
 					if(dhParameters == null)
@@ -657,8 +665,8 @@ public class ServerConnection {
 							out.write(enc,0,enc.length);
 							out.flush();
 							logger.info(new String(dec,StandardCharsets.UTF_8));
-							doWork = true;
-							
+							keySenderLock.unlock();
+							keyReceiverLock.unlock();
 							
 						} catch (IOException e) {
 							logger.error("Error with Socket OutputStream.");

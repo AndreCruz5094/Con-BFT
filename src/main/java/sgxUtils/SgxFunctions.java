@@ -89,11 +89,11 @@ public class SgxFunctions {
 	 * @param pemFilePath - File of the .pem file used to sign the enclave.
 	 * @param enclaveID - Global Id for the enclave.
 	 */
-	public void createSignedEnclave(String dir,String pemFilePath, int enclaveID) {
+	public void createSignedEnclave(String dir,String pemFilePath, int enclaveID,int replicaId) {
 		
 		String shPath = dir + "/SignEnclaveAux.sh"; //Get the correct Script.
 		System.out.println(shPath);
-		String[] cmd = {"sh", shPath,Integer.toString(enclaveID),pemFilePath};
+		String[] cmd = {"sh", shPath,Integer.toString(enclaveID),pemFilePath,Integer.toString(replicaId)};
 		System.out.println(Arrays.toString(cmd));
 		try {
 			Process p = Runtime.getRuntime().exec(cmd);
