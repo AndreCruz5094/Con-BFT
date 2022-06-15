@@ -219,7 +219,7 @@ public class ServiceReplica {
 				this.logger.info("Enclave failed to create.");
 				System.exit(-1);
 			}
-//
+
 //			//Create DH parameters:
 			this.dh_params = this.enclave.jni_sgx_begin_ec_dh(); //Begin the Enclave EC parameters for DH key exchange.
 			this.logger.info("EC Parameters: " + Arrays.toString(dh_params));

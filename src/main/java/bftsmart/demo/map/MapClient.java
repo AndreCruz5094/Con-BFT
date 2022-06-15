@@ -12,14 +12,28 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import bftsmart.tom.ServiceProxy;
+import sgxUtils.SgxFunctions;
 
 public class MapClient<K, V> implements Map<K, V>{
 	
 	ServiceProxy serviceProxy;
+	private SgxFunctions sgx;
+	private byte[] dhParameters;
+	private Logger log = LoggerFactory.getLogger(MapClient.class.getName());
 	
 	public MapClient(int clientId) {
-		serviceProxy = new ServiceProxy(clientId);
+		serviceProxy = new ServiceProxy(clientId);	
+		sgx = new SgxFunctions(-1); // -1 Represents a Client that does not Have SGX Functions enabled.
+		calculateClientDH();
+	}
+	
+	private void calculateClientDH() {
+		this.dhParameters = sgx.jni_calculate_client_sharedDH();
+		this.log.info("Calculated client DH parameters");
 	}
 	
 	@SuppressWarnings("unchecked")

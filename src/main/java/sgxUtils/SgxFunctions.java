@@ -15,7 +15,6 @@ import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.spec.RSAKeyGenParameterSpec;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 
@@ -89,12 +88,10 @@ public class SgxFunctions {
 	 * @param pemFilePath - File of the .pem file used to sign the enclave.
 	 * @param enclaveID - Global Id for the enclave.
 	 */
-	public void createSignedEnclave(String dir,String pemFilePath, int enclaveID,int replicaId) {
+	public void createSignedEnclave(String dir,String pemFilePath, int enclaveID, int replicaId) {
 		
 		String shPath = dir + "/SignEnclaveAux.sh"; //Get the correct Script.
-		System.out.println(shPath);
 		String[] cmd = {"sh", shPath,Integer.toString(enclaveID),pemFilePath,Integer.toString(replicaId)};
-		System.out.println(Arrays.toString(cmd));
 		try {
 			Process p = Runtime.getRuntime().exec(cmd);
 			BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
@@ -253,6 +250,13 @@ public class SgxFunctions {
 	 * @return - the same Input encrypted with SGX Sealing.
 	 */
 	public native byte[] jni_sgx_swap_aes_sealed(byte[] sealed_key,byte[] sealed_input);
+	
+	
+	//Client counterpart functions that do the same as their SGX-based functions.
+	
+	public native byte[] jni_begin_client_ecdh();
+	
+	public native byte[] jni_calculate_client_sharedDH();
 
 	
 	/**
