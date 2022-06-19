@@ -7,6 +7,8 @@ import java.io.ObjectInput;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutput;
 import java.io.ObjectOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -17,15 +19,18 @@ import bftsmart.tom.MessageContext;
 import bftsmart.tom.ServiceReplica;
 import bftsmart.tom.server.defaultservices.DefaultSingleRecoverable;
 
-public class MapServer<K, V> extends DefaultSingleRecoverable {
+public class MapServer<K> extends DefaultSingleRecoverable {
 
-	private Map<K, V> replicaMap;
+	private Map<K, byte[]> replicaMap;
 	private Logger logger;
+
+	//SGX enabled stuff:
+	private ServiceReplica rep;
 
 	public MapServer(int id, int enclaveId) {
 		replicaMap = new TreeMap<>();
 		logger = Logger.getLogger(MapServer.class.getName());
-		new ServiceReplica(id, this, this, enclaveId);
+		this.rep = new ServiceReplica(id, this, this, enclaveId);
 	}
 
 	public static void main(String[] args) {
@@ -33,7 +38,15 @@ public class MapServer<K, V> extends DefaultSingleRecoverable {
 			System.out.println("Usage: demo.map.MapServer <server id> <enclaveId>");
 			System.exit(-1);
 		}
-		new MapServer<String, String>(Integer.parseInt(args[0]),Integer.parseInt(args[1]));
+		new MapServer<String>(Integer.parseInt(args[0]),Integer.parseInt(args[1]));
+	}
+	
+	private byte[] sealValue(String val) {
+		return this.rep.getEnclave().jni_sgx_seal_info(val.getBytes(StandardCharsets.UTF_8));
+	}
+	
+	private String unsealValue(byte[] sealed) {
+		return new String(this.rep.getEnclave().jni_sgx_unseal_info(sealed),StandardCharsets.UTF_8);
 	}
 
 	@SuppressWarnings("unchecked")
@@ -41,7 +54,7 @@ public class MapServer<K, V> extends DefaultSingleRecoverable {
 	public byte[] appExecuteOrdered(byte[] command, MessageContext msgCtx) {
 		byte[] reply = null;
 		K key = null;
-		V value = null;
+		String value = null;
 		boolean hasReply = false;
 		try (ByteArrayInputStream byteIn = new ByteArrayInputStream(command);
 				ObjectInput objIn = new ObjectInputStream(byteIn);
@@ -49,41 +62,49 @@ public class MapServer<K, V> extends DefaultSingleRecoverable {
 				ObjectOutput objOut = new ObjectOutputStream(byteOut);) {
 			MapRequestType reqType = (MapRequestType)objIn.readObject();
 			switch (reqType) {
-				case PUT:
-					key = (K)objIn.readObject();
-					value = (V)objIn.readObject();
+			case PUT:
+				key = (K)objIn.readObject();
+				value = (String)objIn.readObject();
+				byte[] sealedValue = sealValue(value);
+		
 
-					V oldValue = replicaMap.put(key, value);
-					if (oldValue != null) {
-						objOut.writeObject(oldValue);
-						hasReply = true;
-					}
-					break;
-				case GET:
-					key = (K)objIn.readObject();
-					value = replicaMap.get(key);
-					if (value != null) {
-						objOut.writeObject(value);
-						hasReply = true;
-					}
-					break;
-				case REMOVE:
-					key = (K)objIn.readObject();
-					value = replicaMap.remove(key);
-					if (value != null) {
-						objOut.writeObject(value);
-						hasReply = true;
-					}
-					break;
-				case SIZE:
-					int size = replicaMap.size();
-					objOut.writeInt(size);
+				byte[] sealedOldValue = replicaMap.put(key, sealedValue);
+				
+				if (sealedOldValue != null) {
+					String oldValue = unsealValue(sealedOldValue);
+					objOut.writeObject(oldValue);
 					hasReply = true;
-					break;
-				case KEYSET:
-					keySet(objOut);
+				}
+				break;
+			case GET:
+				key = (K)objIn.readObject();
+				sealedValue = replicaMap.get(key);
+				
+				if (sealedValue != null) {
+					value = unsealValue(sealedValue);
+					objOut.writeObject(value);
 					hasReply = true;
-					break;
+				}
+				break;
+			case REMOVE:
+				key = (K)objIn.readObject();
+				sealedValue = replicaMap.remove(key);
+				
+				if (sealedValue != null) {
+					value = unsealValue(sealedValue);
+					objOut.writeObject(value);
+					hasReply = true;
+				}
+				break;
+			case SIZE:
+				int size = replicaMap.size();
+				objOut.writeInt(size);
+				hasReply = true;
+				break;
+			case KEYSET:
+				keySet(objOut);
+				hasReply = true;
+				break;
 			}
 			if (hasReply) {
 				objOut.flush();
@@ -104,7 +125,7 @@ public class MapServer<K, V> extends DefaultSingleRecoverable {
 	public byte[] appExecuteUnordered(byte[] command, MessageContext msgCtx) {
 		byte[] reply = null;
 		K key = null;
-		V value = null;
+		String value = null;
 		boolean hasReply = false;
 
 		try (ByteArrayInputStream byteIn = new ByteArrayInputStream(command);
@@ -113,25 +134,27 @@ public class MapServer<K, V> extends DefaultSingleRecoverable {
 				ObjectOutput objOut = new ObjectOutputStream(byteOut);) {
 			MapRequestType reqType = (MapRequestType)objIn.readObject();
 			switch (reqType) {
-				case GET:
-					key = (K)objIn.readObject();
-					value = replicaMap.get(key);
-					if (value != null) {
-						objOut.writeObject(value);
-						hasReply = true;
-					}
-					break;
-				case SIZE:
-					int size = replicaMap.size();
-					objOut.writeInt(size);
+			case GET:
+				key = (K)objIn.readObject();
+				byte[] sealedValue = replicaMap.get(key);
+				
+				if (sealedValue != null) {
+					value = unsealValue(sealedValue);
+					objOut.writeObject(value);
 					hasReply = true;
-					break;
-				case KEYSET:
-					keySet(objOut);
-					hasReply = true;
-					break;
-				default:
-					logger.log(Level.WARNING, "in appExecuteUnordered only read operations are supported");
+				}
+				break;
+			case SIZE:
+				int size = replicaMap.size();
+				objOut.writeInt(size);
+				hasReply = true;
+				break;
+			case KEYSET:
+				keySet(objOut);
+				hasReply = true;
+				break;
+			default:
+				logger.log(Level.WARNING, "in appExecuteUnordered only read operations are supported");
 			}
 			if (hasReply) {
 				objOut.flush();
@@ -172,7 +195,7 @@ public class MapServer<K, V> extends DefaultSingleRecoverable {
 	public void installSnapshot(byte[] state) {
 		try (ByteArrayInputStream byteIn = new ByteArrayInputStream(state);
 				ObjectInput objIn = new ObjectInputStream(byteIn)) {
-			replicaMap = (Map<K, V>)objIn.readObject();
+			replicaMap = (Map<K, byte[]>)objIn.readObject();
 		} catch (IOException | ClassNotFoundException e) {
 			logger.log(Level.SEVERE, "Error while installing snapshot", e);
 		}

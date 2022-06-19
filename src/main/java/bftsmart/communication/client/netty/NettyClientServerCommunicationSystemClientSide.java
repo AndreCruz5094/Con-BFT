@@ -530,6 +530,51 @@ public class NettyClientServerCommunicationSystemClientSide extends SimpleChanne
 
 		return channelFuture;
 	}
+	
+	
+	public synchronized ChannelFuture connectToSgxReplica(int replicaId, SecretKeyFactory factory, byte[] dhParameters) 
+			throws NoSuchAlgorithmException, InvalidKeySpecException, InvalidKeyException {
+		
+		String str = this.clientId + ":" + replicaId;
+		PBEKeySpec spec = TOMUtil.generateKeySpec(str.toCharArray());
+		SecretKey authKey = factory.generateSecret(spec);
+
+		Bootstrap b = new Bootstrap();
+		b.group(workerGroup);
+		b.channel(NioSocketChannel.class);
+		b.option(ChannelOption.SO_KEEPALIVE, true);
+		b.option(ChannelOption.TCP_NODELAY, true);
+		b.option(ChannelOption.SO_SNDBUF, tcpSendBufferSize);
+		b.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectionTimeoutMsec);
+		b.handler(getChannelInitializer());
+
+		ChannelFuture channelFuture = b.connect(controller.getRemoteAddress(replicaId));
+		while(!channelFuture.isDone()); //Await the connection
+		logger.info("Connected to Replica " + replicaId);
+
+		NettyClientServerSession ncss = new NettyClientServerSession(
+				channelFuture.channel(), replicaId);
+		
+		//Confusing, dont understand netty.
+		
+//		//Write the DH Parameters to the Server:
+//		ChannelFuture cf = ncss.getChannel().write(dhParameters); //Write the Diffie-Hellman parameters for the key exchange;
+//		while(!cf.isDone());
+//		if(!cf.isSuccess()) {
+//			logger.error("DH Key parameters failed to Send, Channel Future.");;
+//		}
+//		
+//		Channel readParams = ncss.getChannel().read();
+//		
+//		//Now we await to read the information from the replica:
+//		//TODO. Read about this.k
+		
+		
+		sessionClientToReplica.put(replicaId, ncss);
+
+		return channelFuture;
+		
+	}
 
 	public synchronized void removeClient(int clientId) {
 		sessionClientToReplica.remove(clientId);

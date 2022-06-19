@@ -22,7 +22,7 @@ public class MapClient<K, V> implements Map<K, V>{
 	
 	ServiceProxy serviceProxy;
 	private SgxFunctions sgx;
-	private byte[] dhParameters;
+//	private byte[] dhParameters;
 	private Logger log = LoggerFactory.getLogger(MapClient.class.getName());
 	
 	public MapClient(int clientId) {
@@ -32,8 +32,8 @@ public class MapClient<K, V> implements Map<K, V>{
 	}
 	
 	private void calculateClientDH() {
-		this.dhParameters = sgx.jni_calculate_client_sharedDH();
-		this.log.info("Calculated client DH parameters");
+//		this.dhParameters = sgx.jni_calculate_client_sharedDH();
+//		this.log.info("Calculated client DH parameters");
 	}
 	
 	@SuppressWarnings("unchecked")

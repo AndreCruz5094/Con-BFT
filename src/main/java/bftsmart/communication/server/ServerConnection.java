@@ -272,7 +272,11 @@ public class ServerConnection {
 							(byte) value }, 0, data, 0, 4);
 					System.arraycopy(messageData, 0, data, 4, messageData.length);
 					System.arraycopy(new byte[] { (byte) 0 }, 0, data, 4 + messageData.length, 1);
-
+//					
+//					if(sharedDhKey != null) { // If SGX is enabled:
+//						data = this.serviceRep.getEnclave().jni_sgx_aes_dh_encrypt(sharedDhKey, data);
+//					}
+					
 					socketOutStream.write(data);
 
 					return;
@@ -468,7 +472,11 @@ public class ServerConnection {
 						byte hasMAC = socketInStream.readByte();
 
 						logger.trace("Read: {}, HasMAC: {}", read, hasMAC);
-
+//						
+//						if(sharedDhKey != null) { //If SGX is enabled:
+//							logger.info("Decrypting Information");
+//							serviceRep.getEnclave().jni_sgx_aes_dh_decrypt(sharedDhKey, data, -1);
+//						}
 						SystemMessage sm = (SystemMessage) (new ObjectInputStream(new ByteArrayInputStream(data))
 								.readObject());
 
