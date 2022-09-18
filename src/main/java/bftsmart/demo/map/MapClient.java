@@ -24,6 +24,7 @@ public class MapClient<K, V> implements Map<K, V>{
 	private SgxFunctions sgx;
 //	private byte[] dhParameters;
 	private Logger log = LoggerFactory.getLogger(MapClient.class.getName());
+	private int numTimeouts = 0;
 	
 	public MapClient(int clientId) {
 		serviceProxy = new ServiceProxy(clientId);	
@@ -34,6 +35,10 @@ public class MapClient<K, V> implements Map<K, V>{
 	private void calculateClientDH() {
 //		this.dhParameters = sgx.jni_calculate_client_sharedDH();
 //		this.log.info("Calculated client DH parameters");
+	}
+	
+	public int getTimeouts() {
+		return this.numTimeouts;
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -50,6 +55,10 @@ public class MapClient<K, V> implements Map<K, V>{
 			byteOut.flush();
 			
 			byte[] reply = serviceProxy.invokeOrdered(byteOut.toByteArray());
+			if(reply == null) { //Timeout.
+				numTimeouts++;
+				return null;
+			}
 			if (reply.length == 0)
 				return null;
 			try (ByteArrayInputStream byteIn = new ByteArrayInputStream(reply);
